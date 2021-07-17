@@ -1,0 +1,25 @@
+# InnnaSyec
+A reversing tool for mips r5900 (Emotion Engine, aka. TX79).
+
+This tool is able to patch an ELF partically.
+
+## Build
+Firstly, you need to build simpgen:
+'''
+cl simpgen.cpp /utf-8 /O2 # Windows
+g++ simpgen.cpp -o simpgen -O2
+'''
+Known bug: the stupid MSVC will make the program failed
+and I have no idea what's the diff. So, my suggest is using g++.
+
+Then, you should build mips5900 description include files.
+'''
+simpgen -i mips5900.cpp -o mips5900
+'''
+
+After that, you can compile the program:
+'''
+cl r5900.cpp /c /O2 /utf-8
+cl prtasm.cpp /c /O2 /utf-8
+link prtasm.obj r5900.obj
+'''

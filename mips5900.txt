@@ -1,0 +1,790 @@
+NOP
+1
+0 31 b0
+0
+%nop
+/*nop*/@
+
+ADD
+3
+0 5 b100000
+6 10 d0
+26 31 b0
+3
+11 15 rd
+16 20 rt
+21 25 rs
+%add $t, $s, $d
+if(LONG_MAX - (long)gpr[rs] < (long)gpr[rd]) return SIG_INTOVERFLOW;
+gpr[rt] = (long)gpr[rs] + (long)gpr[rd];@
+
+ADDI
+1
+26 31 b001000
+3
+0 15 #
+16 20 rt
+21 25 rs
+%addi $t, $s, #
+if(LONG_MAX - (long)gpr[rs] < (long)imm) return SIG_INTOVERFLOW;
+gpr[rt] = (long)gpr[rs] + (long)imm;@
+
+ADDIU
+1
+26 31 b001001
+3
+0 15 #
+16 20 rt
+21 25 rs
+%addiu $t, $s, #
+gpr[rt] = gpr[rs] + imm;@
+
+ADDU
+3
+0 5 b100001
+6 10 d0
+26 31 b0
+3
+11 15 rd
+16 20 rt
+21 25 rs
+%addu $s, $t, $d
+gpr[rs] = gpr[rt] + gpr[rd];@
+
+AND
+3
+0 5 b100100
+6 10 d0
+26 31 b0
+3
+11 15 rd
+16 20 rt
+21 25 rs
+%and $s, $t, $d
+gpr[rs] = gpr[rt] & gpr[rd];@
+
+ANDI
+1
+26 31 b001100
+3
+0 15 #
+16 20 rt
+21 25 rs
+%andi $t, $s, #
+gpr[rt] = gpr[rs] & imm;@
+
+BEQ
+1
+26 31 b000100
+3
+0 15 #
+16 20 rt
+21 25 rs
+%beq $t, $s, &
+if(gpr[rt] == gpr[rs]) gpr[pc] += (imm << 2) - 4;/* there and fllowing minus 4 is delong long to offset regular pc += 4 */
+else gpr[pc] += 4;/* skip delay slot which cached already */@
+
+BEQL
+1
+26 31 b010100
+3
+0 15 #
+16 20 rt
+21 25 rs
+%beql $t, $s, &
+if(gpr[rs] == gpr[rt]) gpr[pc] += (imm << 2) - 4;
+else nullify_delay_slot(), gpr[pc] += 4;@
+
+BGEZ
+2
+26 31 b000001
+16 20 b00001
+2
+0 15 #
+21 25 rs
+%bgez $s, &
+if((long long)gpr[rs] >= 0) gpr[pc] += (imm << 2) - 4;
+else gpr[pc] += 4;@
+
+BGEZAL
+2
+26 31 b000001
+16 20 b10001
+2
+0 15 #
+21 25 rs
+%bgezal $s, &
+if((long long)gpr[rs] >= 0) gpr[ra] = gpr[pc] + 8, gpr[pc] += (imm << 2) - 4;
+else gpr[pc] += 4;@
+
+BGEZALL
+2
+26 31 b000001
+16 20 b10011
+2
+0 15 #
+21 25 rs
+%bgezall $s, &
+if((long long)gpr[rs] >= 0) gpr[ra] = gpr[pc] + 8, gpr[pc] += (imm << 2) - 4;
+else nullify_delay_slot(), gpr[pc] += 4;@
+
+BGEZL
+2
+26 31 b000001
+16 20 b00011
+2
+0 15 #
+21 25 rs
+%bgezl $s, &
+if((long long)gpr[rs] >= 0) gpr[pc] += (imm << 2) - 4;
+else nullify_delay_slot(), gpr[pc] += 4;@
+
+BGTZ
+2
+26 31 b000111
+16 20 b0
+2
+0 15 #
+21 25 rs
+%bgtz $s, &
+if((long long)gpr[rs] > 0) gpr[pc] += (imm << 2) - 4;
+else gpr[pc] += 4;@
+
+BGTZL
+2
+26 31 b010111
+16 20 b0
+2
+0 15 #
+21 25 rs
+%bgtzl $s, &
+if((long long)gpr[rs] > 0) gpr[pc] += (imm << 2) - 4;
+else nullify_delay_slot(), gpr[pc] += 4;@
+
+BLEZ
+2
+26 31 b000110
+16 20 b0
+2
+0 15 #
+21 25 rs
+%blez $s, &
+if((long long)gpr[rs] <= 0) gpr[pc] += (imm << 2) - 4;
+else gpr[pc] += 4;@
+
+BLEZL
+2
+26 31 b010110
+16 20 b0
+2
+0 15 #
+21 25 rs
+%blezl $s, &
+if((long long)gpr[rs] <= 0) gpr[pc] += (imm << 2) - 4;
+else nullify_delay_slot(), gpr[pc] += 4;@
+
+BLTZ
+2
+26 31 b1
+16 20 b0
+2
+0 15 #
+21 25 rs
+%bltz $s, &
+if((long long)gpr[rs] < 0) gpr[pc] += (imm << 2) - 4;
+else gpr[pc] += 4;@
+
+BLTZAL
+2
+26 31 b1
+16 20 b10000
+2
+0 15 #
+21 25 rs
+%bltzal $s, &
+if((long long)gpr[rs] < 0) gpr[ra] = gpr[pc] + 8, gpr[pc] += (imm << 2) - 4;
+else gpr[pc] += 4;@
+
+BLTZALL
+2
+26 31 b1
+16 20 b10010
+2
+0 15 #
+21 25 rs
+%bltzall $s, &
+if((long long)gpr[rs] < 0) gpr[ra] = gpr[pc] + 8, gpr[pc] += (imm << 2) - 4;
+else nullify_delay_slot(), gpr[pc] += 4;@
+
+BLTZL
+2
+26 31 b1
+16 20 b00010
+2
+0 15 #
+21 25 rs
+%bltzl $s, &
+if((long long)gpr[rs] < 0) gpr[pc] += (imm << 2) - 4;
+else nullify_delay_slot(), gpr[pc] += 4;@
+
+BNE
+1
+26 31 b000101
+3
+21 25 rs
+16 20 rt
+0 15 #
+%bne $s, $t, &
+if(gpr[rs] != gpr[rt]) gpr[pc] += (imm << 2) - 4;
+else gpr[pc] += 4;@
+
+BNEL
+1
+26 31 b010101
+3
+21 25 rs
+16 20 rt
+0 15 #
+%bnel $s, $t, &
+if(gpr[rs] != gpr[rt]) gpr[pc] += (imm << 2) - 4;
+else nullify_delay_slot(), gpr[pc] += 4;@
+
+BREAK
+2
+26 31 b0
+0 5 b001101
+1
+6 25 #
+%break #
+return SIG_BREAK + imm;@
+
+DADD
+3
+26 31 b0
+6 10 b0
+0 5 b101100
+3
+21 25 rs
+16 20 rt
+11 15 rd
+%dadd $d, $s, $t
+if(LLONG_MAX - (long long)gpr[rs] < (long long)gpr[rt]) return SIG_INTOVERFLOW;
+else gpr[rd] = (long long)gpr[rs] + (long long)gpr[rt];@
+
+DADDI
+1
+26 31 b011000
+3
+21 25 rs
+16 20 rt
+0 15 #
+%daddi $t, $s, #
+if(LLONG_MAX - (long long)gpr[rs] < (long long)imm) return SIG_INTOVERFLOW;
+else gpr[rt] = (long long)gpr[rs] + (long long)imm;@
+
+DADDIU
+1
+26 31 b011001
+3
+21 25 rs
+16 20 rt
+0 15 #
+%daddiu $t, $s, #
+gpr[rt] = gpr[rs] + (long long)imm;@
+
+DADDU
+3
+26 31 b0
+6 10 b0
+0 5 b101101
+3
+21 25 rs
+16 20 rt
+11 15 rd
+%daddu $d, $s, $t
+gpr[rd] = (long long)gpr[rs] + (long long)gpr[rt];@
+
+DIV
+3
+26 31 b0
+6 15 b0
+0 5 b011010
+2
+21 25 rs
+16 20 rt
+%div $s, $t
+gpr[lo] = (long long)gpr[rs] / (long long)gpr[rt];
+gpr[hi] = (long long)gpr[rs] % (long long)gpr[rt];@
+
+DIVU
+3
+26 31 b0
+6 15 b0
+0 5 b011011
+2
+21 25 rs
+16 20 rt
+%divu $s, $t
+gpr[lo] = gpr[rs] / gpr[rt];
+gpr[hi] = gpr[rs] % gpr[rt];@
+
+DSLL
+2
+21 31 b0
+0 5 b111000
+3
+6 10 #
+11 15 rd
+16 20 rt
+%dsll $d, $t, #
+gpr[rd] = gpr[rt] << imm;@
+
+DSLL32
+2
+21 31 b0
+0 5 b111100
+3
+6 10 #
+11 15 rd
+16 20 rt
+%dsll32 $d, $t, #
+gpr[rd] = gpr[rt] << imm + 32;@
+
+DSLLV
+3
+26 31 b0
+0 5 b010100
+6 10 b000000
+3
+21 25 rs
+16 20 rt
+11 15 rd
+%dsllv $d, $t, $s
+gpr[rd] = gpr[rt] << gpr[rs];@
+
+DSLRA
+2
+21 31 b0
+0 5 b111011
+3
+6 10 #
+11 15 rd
+16 20 rt
+%dslra $d, $t, $s
+gpr[rd] = (long long)gpr[rt] >> imm;@
+
+DSRA32
+2
+21 31 b0
+0 5 b111111
+3
+6 10 #
+11 15 rd
+16 20 rt
+%dsra32 $d, $t, $s
+gpr[rd] = (long long)gpr[rt] >> imm + 32;@
+
+DSRAV
+3
+26 31 b0
+0 5 b010111
+6 10 b000000
+3
+21 25 rs
+16 20 rt
+11 15 rd
+%dsrav $d, $t, $s
+gpr[rd] = (long long)gpr[rt] >> gpr[rs];@
+
+DSRL
+2
+21 31 b0
+0 5 b111010
+3
+6 10 #
+11 15 rd
+16 20 rt
+%dsrl $d, $t, #
+gpr[rd] = gpr[rt] >> imm;@
+
+DSRL32
+2
+21 31 b0
+0 5 b111110
+3
+6 10 #
+11 15 rd
+16 20 rt
+%dsrl32 $d, $t, #
+gpr[rd] = gpr[rt] >> imm + 32;@
+
+DSRLV
+3
+26 31 b0
+0 5 b010110
+6 10 b000000
+3
+21 25 rs
+16 20 rt
+11 15 rd
+%dsrlv $d, $t, $s
+gpr[rd] = gpr[rt] >> gpr[rs];@
+
+DSUB
+3
+26 31 b0
+0 5 b101110
+6 10 b000000
+3
+21 25 rs
+16 20 rt
+11 15 rd
+%dsub $d, $s, $t
+/*TODO: add exception thorow here.*/
+gpr[rd] = (long long)gpr[rs] - (long long)gpr[rt];@
+
+DSUBU
+3
+26 31 b0
+0 5 b101111
+6 10 b000000
+3
+21 25 rs
+16 20 rt
+11 15 rd
+%dubu $d, $s, $t
+/*TODO: add exception thorow here.*/
+gpr[rd] = gpr[rs] - gpr[rt];@
+
+J
+1
+26 31 b000010
+1
+0 25 #
+%j &
+gpr[pc] = gpr[pc] & 0xF0000000 | (imm << 2) - 4;@
+
+JAL
+1
+26 31 b000011
+1
+0 25 #
+%jal &
+gpr[ra] = gpr[pc] + 8;
+gpr[pc] = gpr[pc] & 0xF0000000 | (imm << 2) - 4;@
+
+JALR
+4
+26 31 b0
+16 20 b0
+6 10 b0
+0 5 b001001
+2
+21 25 rs
+11 15 rd
+%jalr $d, $s
+gpr[rd] = gpr[pc] + 8;
+gpr[pc] = gpr[rs] - 4;@
+
+JR
+3
+26 31 b0
+0 5 b001000
+6 20 b0
+1
+21 25 rs
+%jr $s
+gpr[pc] = gpr[rs] - 4;@
+
+LB
+1
+26 31 b100000
+3
+21 25 rs
+16 20 rt
+0 15 #
+%lb $t, #($s)
+gpr[rt] = (long long)lb(gpr[rs] + (int)imm);@
+
+LBU
+1
+26 31 b100100
+3
+21 25 rs
+16 20 rt
+0 15 #
+%lbu $t, #($s)
+gpr[rt] = lb(gpr[rs] + (int)imm);@
+
+LD
+1
+26 31 b110111
+3
+21 25 rs
+16 20 rt
+0 15 #
+%ld $s, #($s)
+gpr[rt] = (long long)ld(gpr[rs] + (int)imm);@
+
+LH
+1
+26 31 b100001
+3
+21 25 rs
+16 20 rt
+0 15 #
+%lh $t, #($s)
+gpr[rt] = (long long)lh(gpr[rs] + (int)imm);@
+
+LHU
+1
+26 31 b100101
+3
+21 25 rs
+16 20 rt
+0 15 #
+%lhu $t, #($s)
+gpr[rt] = lh(gpr[rs] + (int)imm);@
+
+LW
+1
+26 31 b100011
+3
+21 25 rs
+16 20 rt
+0 15 #
+%lw $t, #($s)
+gpr[rt] = (long long)lw(gpr[rs] + (int)imm);@
+
+MFHI
+4
+26 31 b0
+16 25 b0
+6 10 b0
+0 5 b010000
+1
+11 15 rd
+%mfhi $d
+gpr[rd] = gpr[hi];@
+
+MFLO
+4
+26 31 b0
+16 25 b0
+6 10 b0
+0 5 b010010
+1
+11 15 rd
+%mflo $d
+gpr[rd] = gpr[lo];@
+
+MOVN
+3
+26 31 b0
+6 10 b0
+0 5 b001011
+3
+21 25 rs
+16 20 rt
+11 15 rd
+%movn $t, $d, $s
+if(gpr[rt] != 0) gpr[rd] = gpr[rs];@
+
+MOVZ
+3
+26 31 b0
+6 10 b0
+0 5 b001010
+3
+21 25 rs
+16 20 rt
+11 15 rd
+%movz $t, $d, $s
+if(gpr[rt] == 0) gpr[rd] = gpr[rs];@
+
+MTHI
+3
+26 31 b0
+6 20 b0
+0 5 b010001
+1
+25 21 rs
+%mthi $s
+gpr[hi] = gpr[rs];@
+
+MTLO
+3
+26 31 b0
+6 20 b0
+0 5 b010011
+1
+25 21 rs
+%mtlo $s
+gpr[lo] = gpr[rs];@
+
+MULT
+3
+26 31 b0
+6 15 b0
+0 5 b011000
+2
+21 25 rs
+16 20 rt
+%mult $s, $t
+ans = (long)gpr[rs] * (long)gpr[rt];
+gpr[hi] = ans & 0xffffffff00000000 >> 32;
+gpr[lo] = ans & 0xffffffff;@
+
+
+MULTU
+3
+26 31 b0
+6 15 b0
+0 5 b011001
+2
+21 25 rs
+16 20 rt
+%multu $s, $t
+ans = (unsigned)gpr[rs] * (unsigned)gpr[rt];
+gpr[hi] = ans & 0xffffffff00000000 >> 32;
+gpr[lo] = ans & 0xffffffff;@
+
+NOR
+3
+26 31 b0
+6 15 b0
+0 5 b100111
+2
+21 25 rs
+16 20 rt
+%nor $d, $s, $t
+gpr[rd] = ~(gpr[rs] | gpr[rt]);@
+
+OR
+3
+26 31 b0
+6 15 b0
+0 5 b100101
+2
+21 25 rs
+16 20 rt
+%or $d, $s, $t
+gpr[rd] = gpr[rs] | gpr[rt];@
+
+ORI
+1
+26 31 b001101
+3
+21 25 rs
+16 20 rt
+0 15 #
+%ori $d, $s, #
+gpr[rt] = gpr[rs] | imm;@
+
+PREF
+1
+26 31 b110011
+3
+21 25 rs
+16 20 rt
+0 15 #
+%pref $s, #($t)
+/*no op need*/@
+
+SB
+1
+26 31 b101000
+3
+21 25 rs
+16 20 rt
+0 15 #
+%sb $t, #($s)
+sb(gpr[rt], gpr[rs] + (int)imm);@
+
+SD
+1
+26 31 b111111
+3
+21 25 rs
+16 20 rt
+0 15 #
+%sd $t, #($s)
+sd(gpr[rt], gpr[rs] + (int)imm);@
+
+SH
+1
+26 31 b101001
+3
+21 25 rs
+16 20 rt
+0 15 #
+%sh $t, #($s)
+sh(gpr[rt], gpr[rs] + (int)imm);@
+
+SLL
+3
+26 31 b0
+21 25 b0
+0 5 b000000
+3
+16 20 rt
+11 15 rd
+6 10 #
+%sll $d, $t, #
+gpr[rd] = (gpr[rt] << imm) & 0xffffffff;@
+
+SLLV
+3
+26 31 b0
+6 10 b0
+0 5 b000100
+3
+21 25 rs
+16 20 rt
+11 15 rd
+%sllv $d, $t, $s
+gpr[rd] = (gpr[rt] << gpr[rs]) & 0xffffffff;@
+
+SLT
+3
+26 31 b0
+6 10 b0
+0 5 b101010
+3
+21 25 rs
+16 20 rt
+11 15 rd
+%slt $d, $t, $s
+gpr[rd] = ((long long)gpr[rs] < (long long)gpr[rt]) ? 1 : 0;@
+
+SLTI
+1
+26 31 b001010
+3
+21 25 rs
+16 20 rt
+0 15 #
+%slti $s, $t, #
+gpr[rd] = ((long long)gpr[rs] < (long long)imm) ? 1 : 0;@
+
+SLTIU
+1
+26 31 b001011
+3
+21 25 rs
+16 20 rt
+0 15 #
+%sltiu $d, $s, #
+gpr[rd] = (gpr[rs] < imm) ? 1 : 0;@
+
+SLTU
+3
+26 31 b0
+6 10 b0
+0 5 b101011
+3
+21 25 rs
+16 20 rt
+11 15 rd
+%sltiu $d, $s, $t
+gpr[rd] = (gpr[rs] < gpr[rt]) ? 1 : 0;@
