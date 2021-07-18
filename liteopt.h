@@ -59,7 +59,7 @@ static int __lopt_callbystr(const char *opt, const char *_str)
     return -i;
 }
 
-static void lopt_regopt(char *name, char chname, unsigned char flg, int (*callback)(const char *))
+static void lopt_regopt(const char *name, char chname, unsigned char flg, int (*callback)(const char *))
 {
     static int opt_idx = 0;
     if (__reged_opt == NULL)
@@ -85,7 +85,9 @@ static int lopt_parse(int argc, const char **argv)
             else
                 rst = __lopt_callbystr(argv[i] + 2, NULL);
 
-            if (rst != 0)
+            if (rst < 0)
+                return -i;
+            if (rst > 0)
                 return rst;
         }
         else
@@ -98,7 +100,9 @@ static int lopt_parse(int argc, const char **argv)
                 else
                     rst = __lopt_callbych(argv[i][j], NULL);
 
-                if (rst != 0)
+                if (rst < 0)
+                    return -i;
+                if (rst > 0)
                     return rst;
                 ++j;
             }

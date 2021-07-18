@@ -242,8 +242,8 @@ int main(int argc, char const *argv[])
 			if (val[0] == '#')
 			{
 				fprintf(aout, "tmp = (ins >> %d) & 0x%X;\n\
-ans.imm = (ins & 1 << %d) ? (signed long long)tmp : tmp;\n",
-						s, (1 << (e - s + 1)) - 1, e);
+ans.imm = (ins & (1 << %d)) ? (signed long long)((unsigned long long)tmp << %d) >> %d : tmp;\n",
+						s, (1 << (e - s + 1)) - 1, e, 63 - (e - s), 63 - (e - s));
 				fprintf(sout, "ans |= (ins.imm & 0x%X) << %d;\n", (1ll << (e - s + 1)) - 1, s);
 			}
 			else
@@ -254,7 +254,7 @@ ans.imm = (ins & 1 << %d) ? (signed long long)tmp : tmp;\n",
 		}
 		fprintf(aout, "ans.opcode = %s;\n", buffer);
 		fputs("return ans;\n}\n", aout);
-		fscanf(input, "%*[ \n]%*%%[^\n]", flg);
+		fscanf(input, "%%%[^\r\n]", flg);
 		fgetc(input);
 		fprintf(tout, "\"%s\", ", flg);
 		fscanf(input, "%[^@]", flg);
