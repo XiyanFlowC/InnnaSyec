@@ -20,6 +20,7 @@ int handle_i(const char *filename);
 int handle_o(const char *filename);
 int handle_s(const char *filename);
 int handle_D(const char *hexstr);
+int handle_A(const char *assembly);
 void error(int code);
 void warn(int code);
 void fatal(int code);
@@ -31,6 +32,7 @@ int main(int argc, const char **argv)
     lopt_regopt("output", 'o', LOPT_FLG_CH_VLD | LOPT_FLG_OPT_VLD | LOPT_FLG_STR_VLD, handle_o);
     lopt_regopt("script", 's', LOPT_FLG_CH_VLD | LOPT_FLG_OPT_VLD | LOPT_FLG_STR_VLD, handle_s);
     lopt_regopt("disasmimm", 'D', LOPT_FLG_CH_VLD | LOPT_FLG_OPT_VLD | LOPT_FLG_STR_VLD, handle_D);
+    lopt_regopt("asmimm", 'A', LOPT_FLG_CH_VLD | LOPT_FLG_OPT_VLD | LOPT_FLG_STR_VLD, handle_A);
 
     int ret = lopt_parse(argc, argv);
     if (ret != 0)
@@ -117,12 +119,26 @@ int handle_s(const char *filename)
 
 int handle_D(const char *hex)
 {
+    if(hex == NULL) fatal(1901);
     char buf[128];
     unsigned long data;
-    sscanf(hex, "%X", &data);
+    sscanf(hex, "%lX", &data);
     instr_t inst = disasm(data);
     printdis(buf, inst);
     puts(buf);
+    return 0;
+}
+
+int handle_A(const char *asmb)
+{
+    if(asmb == NULL) fatal(1901);
+    instr_t ans;
+    if( -1 == parse_asm(asmb, &ans))
+    {
+        error(8000);
+        return -1;
+    }
+    printf("%08X\n", asmble(ans));
     return 0;
 }
 
@@ -143,12 +159,13 @@ static struct err_t
     {1902, "命令行参数解析时发生错误，请留意下方信息。"},
     {1901, "命令行参数解析时出错：需求的参数不完整。"},
     {1900, "命令行参数解析时发生错误，请留意上方信息。"},
+    {8000, "无效汇编指令。"},
     {9999, "索引未命中。"}
 };
 
 void error(int code)
 {
-    for (int i = 0; i < sizeof(err_t); ++i)
+    for (int i = 0; i < (int)sizeof(err_t); ++i)
     {
         if (errs[i].code == code)
         {
@@ -161,7 +178,7 @@ void error(int code)
 
 void fatal(int code)
 {
-    for (int i = 0; i < sizeof(err_t); ++i)
+    for (int i = 0; i < (int)sizeof(err_t); ++i)
     {
         if (errs[i].code == code)
         {
@@ -174,7 +191,7 @@ void fatal(int code)
 
 void warn(int code)
 {
-    for (int i = 0; i < sizeof(err_t); ++i)
+    for (int i = 0; i < (int)sizeof(err_t); ++i)
     {
         if (errs[i].code == code)
         {
@@ -187,7 +204,7 @@ void warn(int code)
 
 void info(int code)
 {
-    for (int i = 0; i < sizeof(err_t); ++i)
+    for (int i = 0; i < (int)sizeof(err_t); ++i)
     {
         if (errs[i].code == code)
         {

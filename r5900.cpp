@@ -2,6 +2,22 @@
 #include "r5900.hpp"
 #include <cstring>
 
+#ifndef _WIN32
+char *strupr(char *str)
+{
+	char *ret = str;
+	while(*str != '\0')
+	{
+		if(*str >= 'a' && *str <= 'z')
+		{
+			*str = *str - 'a' + 'A';
+		}
+		++str;
+	}
+	return ret;
+}
+#endif
+
 const char* insts_name[] = {
 #include "mips5900_refl.inc"
 };
@@ -11,7 +27,7 @@ const char* insts_tmpl[] = {
 };
 
 const char* gpr_name[] = {
-	"zero", "at", "v0", "v1", "a0", "a2", "a3",
+	"zero", "at", "v0", "v1", "a0", "a1", "a2", "a3",
 	"t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7",
 	"s0", "s1", "s2", "s3", "s4", "s5", "s6", "s7",
 	"t8", "t9", "k0", "k1", "gp", "sp", "fp", "ra",
@@ -23,7 +39,8 @@ int get_term(char *dst, const char *src, const char end_ch)
 	int i = 0;
 	while(src[i] != '\0' && src[i] != end_ch)
 	{
-		dst[i] = src[i++];
+		dst[i] = src[i];
+		++i;
 	}
 	dst[i] = '\0';
 	return i;
@@ -31,7 +48,7 @@ int get_term(char *dst, const char *src, const char end_ch)
 
 int get_gprid(const char *name)
 {
-	for(int i = 0; i < sizeof(gpr_name); ++i)
+	for(int i = 0; i < (int)sizeof(gpr_name); ++i)
 	{
 		if(0 == strcmp(name, gpr_name[i]))
 		{
@@ -152,6 +169,13 @@ int printdis(char *_buf, instr_t _ins)
 			if(tmpl[i] == 'd')
 				j += sprintf(_buf + j, "%s", gpr_name[_ins.rd]);
 		}
+		else if(tmpl[i] == '&')
+		{
+			if(_ins.imm >= 0)
+				j += sprintf(_buf + j, "0x%X", _ins.imm << 2);
+			else
+				j += sprintf(_buf + j, "-0x%X", -_ins.imm << 2);
+		}
 		else
 		{
 			_buf[j++] = tmpl[i];
@@ -168,11 +192,12 @@ int parse_asm(const char* _buf, instr_t *_ins)
 	sscanf(_buf, "%s", buf);
 	strupr(buf);
 	int inst_id = -1;
-	for(int i = 0; i < sizeof(insts_name); ++i)
+	for(int i = 0; i < (int)sizeof(insts_name); ++i)
 	{
 		if(0 == strcmp(buf, insts_name[i]))
 		{
 			inst_id = i;
+			break;
 		}
 	}
 	if(inst_id == -1)
@@ -180,7 +205,7 @@ int parse_asm(const char* _buf, instr_t *_ins)
 		return -1;
 	}
 	_ins->opcode = inst_id;
-	int p, q = strlen(buf); // 模板、缓冲区游标
+	int p, q = strlen(buf); // 模板、缓冲区游标。
 	p = q;
 	const char* src = insts_tmpl[inst_id];
 	while(src[p] != '\0')
@@ -197,18 +222,52 @@ int parse_asm(const char* _buf, instr_t *_ins)
 		if(src[p] == '$')
 		{
 			++p;
-			get_term(buf, _buf + q, src[p + 1]);
+			q += get_term(buf, _buf + q, src[p + 1]); // 获取指定的项。
+			int reg_id = get_gprid(buf);
 			switch(src[p])
 			{
 				case 's':
+				_ins->rs = reg_id;
 				break;
-				case 'r':
+				case 'd':
+				_ins->rd = reg_id;
 				break;
 				case 't':
+				_ins->rt = reg_id;
 				break;
 			}
 			++p;
+			continue;
 		}
+		if(src[p] == '#' || src[p] == '&')
+		{
+			// get_term(buf, _buf + q, src[p + 1]);
+			int m = 1, base = 10, ans = 0;
+			if(_buf[q] == '-')
+			{
+				m = -1;
+				++q;
+			}
+			if(_buf[q] == '0')
+			{
+				if(_buf[q + 1] == 'x')
+				{
+					q += 2;
+					q += sscanf(_buf + q, "%x", &ans);
+				}
+			}
+			else q += sscanf(_buf + q, "%d", &ans);
+			if(src[p] == '&') ans >>= 2;
+			ans *= m;
+			_ins->imm = ans;
+			++p;
+			continue;
+		}
+		if(src[p] != _buf[q]) {
+			return q;
+		}
+		++p;
+		++q;
 	}
 
 	return 0;
