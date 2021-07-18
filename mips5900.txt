@@ -546,6 +546,16 @@ LHU
 %lhu $t, #($s)
 gpr[rt] = lh(gpr[rs] + (int)imm);@
 
+LUI
+2
+26 31 b001111
+21 25 b00000
+2
+16 20 rt
+0 15 #
+%lui $t, #
+gpr[rt] = imm << 16;@
+
 LW
 1
 26 31 b100011
@@ -788,3 +798,146 @@ SLTU
 11 15 rd
 %sltiu $d, $s, $t
 gpr[rd] = (gpr[rs] < gpr[rt]) ? 1 : 0;@
+
+SRA
+3
+26 31 b0
+21 25 b0
+0 5 b000011
+3
+16 20 rt
+11 15 rd
+6 10 #
+%sra $d, $t, #
+gpr[rd] = (signed long long)gpr[rt] >> imm;@
+
+SRAV
+3
+26 31 b0
+6 10 b0
+0 5 b000111
+3
+16 20 rt
+11 15 rd
+21 25 rs
+%srav $d, $t, $s
+gpr[rd] = (signed long long)gpr[rt] >> gpr[rs];@
+
+SRL
+3
+26 31 b0
+21 25 b0
+0 5 b000010
+3
+16 20 rt
+11 15 rd
+6 10 #
+%srl $d, $t, #
+gpr[rd] = gpr[rt] << imm;@
+
+SRLV
+3
+26 31 b0
+6 10 b0
+0 5 b000110
+3
+16 20 rt
+11 15 rd
+21 25 rs
+%srav $d, $t, $s
+gpr[rd] = gpr[rt] << gpr[rs];@
+
+SUB
+3
+26 31 b0
+6 10 b0
+0 5 b100010
+3
+16 20 rt
+11 15 rd
+21 25 rs
+%sub $d, $s, $t
+gpr[rd] = gpr[rs] - gpr[rt];/*FIXME: overflow check*/@
+
+SUBU
+3
+26 31 b0
+6 10 b0
+0 5 b100011
+3
+16 20 rt
+11 15 rd
+21 25 rs
+%subu $d, $s, $t
+gpr[rd] = gpr[rs] - gpr[rt];@
+
+SW
+1
+26 31 b101011
+3
+21 25 rs
+16 20 rt
+0 15 #
+%sw $t, #($s)
+sw(gpr[rt], gpr[rs] + (int)imm);@
+
+SYNC
+3
+26 31 b0
+10 25 b0
+0 5 b001111
+1
+6 9 #
+%SYNC #
+/*do nothing*/@
+
+SYNC.L
+3
+26 31 b0
+10 25 b0
+0 5 b001111
+1
+6 9 #
+%SYNC.P #
+/*do nothing*/@
+
+SYNC.P
+3
+26 31 b0
+10 25 b1
+0 5 b001111
+1
+6 9 #
+%SYNC.P #
+/*do nothing*/@
+
+SYSCALL
+2
+26 31 b0
+0 5 b001100
+1
+6 25 #
+%SYSCALL #
+/*do nothing*/@
+
+XOR
+3
+26 31 b0
+6 10 b0
+0 5 b100110
+3
+21 25 rs
+16 20 rt
+11 15 rd
+%xor $d, $s, $t
+gpr[rd] = gpr[rs] ^ gpr[rt];@
+
+XORI
+1
+26 31 b001110
+3
+21 25 rs
+16 20 rt
+0 15 #
+%xori $t, $s, #
+gpr[rt] = gpr[rs] ^ imm;@

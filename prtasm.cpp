@@ -39,7 +39,7 @@ int main(int argc, const char **argv)
     {
         if (ret < 0)
         {
-            printf("Unknown switch error, [%s] unrecoginizable.", argv[-ret]);
+            printf("Unknown switch error, [%s] unrecoginizable.\n", argv[-ret]);
             exit(ret);
         }
         else

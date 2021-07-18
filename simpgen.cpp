@@ -141,6 +141,15 @@ int readoct(const char *str)
 	return ret;
 }
 
+void dedot(char *str)
+{
+	while(*str != '\0')
+	{
+		if(*str == '.') *str = '_';
+		++str;
+	}
+}
+
 char *get_name(FILE *stream)
 {
 	static char name_buf[256];
@@ -199,8 +208,10 @@ int main(int argc, char const *argv[])
 
 	while (EOF != fscanf(input, "%s", buffer))
 	{
-		fprintf(dout, "#define %s %d\n", buffer, ins_id++); // macro define
 		fprintf(nout, "\"%s\", ", buffer);					// relect name out
+		
+		dedot(buffer);
+		fprintf(dout, "#define %s %d\n", buffer, ins_id++); // macro define
 		fprintf(xout, "case %s:\n", buffer);				// emulation case [per inst]
 
 		// To using these, you should do a first (dis)asm first
