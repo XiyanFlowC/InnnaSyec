@@ -74,7 +74,7 @@ int main(int argc, const char **argv)
                     sscanf(lmt, "%llx:%llx", &dasm_sta, &dasm_end);
                     return 0;
                 });
-    lopt_regopt("invalid-ops", '\0', LOPT_FLG_CH_VLD | LOPT_FLG_OPT_VLD,
+    lopt_regopt("invalid-ops", 'n', LOPT_FLG_CH_VLD | LOPT_FLG_STR_VLD | LOPT_FLG_OPT_VLD,
                 [](const char *stub) -> int
                 {
                     do_invalid = true;
@@ -105,6 +105,11 @@ int main(int argc, const char **argv)
         {
             error(1900);
         }
+    }
+
+    if(input == NULL)
+    {
+        fatal(1101);
     }
 
     fseek(input, 0, SEEK_END);
@@ -284,7 +289,9 @@ static struct err_t
     {1000, "早已打开输入文件。"},
     {1010, "早已打开输出文件。"},
     {1100, "无法打开输入文件。"},
+    {1101, "需要输入文件，但未能打开。"},
     {1110, "无法打开输出文件。"},
+    {1111, "需要输出文件，但未能打开。"},
     {1200, "未知的输出偏好选项。"},
     {1500, "将忽略新指定的文件。"},
     {1902, "命令行参数解析时发生错误，请留意下方信息。"},
