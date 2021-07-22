@@ -698,11 +698,12 @@ gpr[rd] = ~(gpr[rs] | gpr[rt]);@
 OR
 3
 26 31 b0
-6 15 b0
+6 10 b0
 0 5 b100101
-2
+3
 21 25 rs
 16 20 rt
+11 15 rd
 %or $d, $s, $t
 gpr[rd] = gpr[rs] | gpr[rt];@
 
@@ -713,7 +714,7 @@ ORI
 21 25 rs
 16 20 rt
 0 15 #
-%ori $d, $s, #
+%ori $t, $s, #
 gpr[rt] = gpr[rs] | imm;@
 
 PREF
