@@ -48,7 +48,7 @@ int get_term(char *dst, const char *src, const char end_ch)
 
 int get_gprid(const char *name)
 {
-	for(int i = 0; i < (int)sizeof(gpr_name); ++i)
+	for(int i = 0; i < (int)sizeof(gpr_name)/sizeof(const char *); ++i)
 	{
 		if(0 == strcmp(name, gpr_name[i]))
 		{
@@ -192,7 +192,7 @@ int parse_asm(const char* _buf, instr_t *_ins)
 	sscanf(_buf, "%s", buf);
 	strupr(buf);
 	int inst_id = -1;
-	for(int i = 0; i < (int)sizeof(insts_name); ++i)
+	for(int i = 0; i < (int)sizeof(insts_name)/sizeof(const char *); ++i)
 	{
 		if(0 == strcmp(buf, insts_name[i]))
 		{
@@ -224,6 +224,7 @@ int parse_asm(const char* _buf, instr_t *_ins)
 			++p;
 			q += get_term(buf, _buf + q, src[p + 1]); // 获取指定的项。
 			int reg_id = get_gprid(buf);
+			if(reg_id == -1) return -2;
 			switch(src[p])
 			{
 				case 's':
@@ -264,7 +265,7 @@ int parse_asm(const char* _buf, instr_t *_ins)
 			continue;
 		}
 		if(src[p] != _buf[q]) {
-			return q;
+			return -3;
 		}
 		++p;
 		++q;

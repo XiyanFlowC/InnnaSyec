@@ -39,6 +39,19 @@ ADDIU
 %addiu $t, $s, #
 gpr[rt] = gpr[rs] + imm;@
 
+MOVE
+4
+0 5 b100001
+6 10 d0
+26 31 b0
+16 20 b0
+2
+11 15 rd
+21 25 rs
+%move $d, $s
+gpr[rd] = gpr[rs];@
+
+
 ADDU
 3
 0 5 b100001
@@ -48,8 +61,8 @@ ADDU
 11 15 rd
 16 20 rt
 21 25 rs
-%addu $s, $t, $d
-gpr[rs] = gpr[rt] + gpr[rd];@
+%addu $d, $s, $t
+gpr[rd] = gpr[rs] + gpr[rt];@
 
 AND
 3
@@ -291,6 +304,18 @@ DADDIU
 0 15 #
 %daddiu $t, $s, #
 gpr[rt] = gpr[rs] + (long long)imm;@
+
+DMOVE
+4
+26 31 b0
+6 10 b0
+0 5 b101101
+16 20 b0
+2
+21 25 rs
+11 15 rd
+%dmove $d, $s
+gpr[rd] = gpr[rs];@
 
 DADDU
 3

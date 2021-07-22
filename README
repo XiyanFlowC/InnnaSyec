@@ -3,23 +3,44 @@ A reversing tool for mips r5900 (Emotion Engine, aka. TX79).
 
 This tool is able to patch an ELF partically.
 
+MIPS R5900（又称TX79）的逆向辅助工具。
+
+设计为可以部分更新（打补丁）二进制文件的形式。
+
 ## Build
 Firstly, you need to build simpgen:
-'''
+
+首先构建simpgen：
+```
 cl simpgen.cpp /utf-8 /O2 # Windows
-g++ simpgen.cpp -o simpgen -O2
-'''
-Known bug: the stupid MSVC will make the program failed
-and I have no idea what's the diff. So, my suggest is using g++.
+g++ simpgen.cpp -o simpgen -O2 # Linux
+```
 
 Then, you should build mips5900 description include files.
-'''
+
+然后用simpgen生成嵌入文件。
+```
 simpgen -i mips5900.cpp -o mips5900
-'''
+```
 
 After that, you can compile the program:
-'''
+
+然后构建项目。
+```
 cl r5900.cpp /c /O2 /utf-8
 cl prtasm.cpp /c /O2 /utf-8
 link prtasm.obj r5900.obj
-'''
+```
+or...
+
+或者……
+```
+g++ r5900.cpp prtasm.cpp -o prtasm
+```
+
+If you need help, just use:
+
+若需要使用帮助，键入：
+```
+./prtasm --help
+```

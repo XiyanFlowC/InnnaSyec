@@ -45,8 +45,14 @@ unsigned asmble(instr_t ins);
 
 int exec_ins(instr_t ins);
 
+// 打印
 int printdis(char* _buf, instr_t _ins);
 
+// 解析字符形式汇编指令（仅真指令，伪指令不可处理）
+// 返回值：处理成功的字符数，失败时：
+// -1 指令名未知
+// -2 寄存器名未知
+// -3 格式解析错误
 int parse_asm(const char* _buf, instr_t *_ins);
 
 #endif
