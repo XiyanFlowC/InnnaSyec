@@ -1,0 +1,2 @@
+#define printf 0x442b70
+#define puts 0x442d08
