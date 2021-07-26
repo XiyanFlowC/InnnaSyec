@@ -8,9 +8,19 @@
 #include "mips5900_def.inc"
 #define INVALID -1
 
+#ifndef _WIN32
+char *strupr(char *str);
+#endif
+
+int get_term(char *dst, const char *src, const char end_ch);
+
+int count_term(const char *src, const char end_ch);
+
 extern const char* insts_name[];
 
 extern const char* insts_tmpl[];
+
+extern const int insts_cnt;
 
 extern const char* gpr_name[]; // mips r5900 regs
 

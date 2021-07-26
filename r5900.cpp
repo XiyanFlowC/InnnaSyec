@@ -26,6 +26,9 @@ const char* insts_tmpl[] = {
 #include "mips5900_tmpl.inc"
 };
 
+const int insts_cnt = (int)(sizeof(insts_name)/sizeof(const char *));
+
+
 const char* gpr_name[] = {
 	"zero", "at", "v0", "v1", "a0", "a1", "a2", "a3",
 	"t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7",
@@ -34,6 +37,7 @@ const char* gpr_name[] = {
 	"pc", "hi", "lo",
 };
 
+// 获取一个由end_ch终止的项，end_ch本身不含于其中。
 int get_term(char *dst, const char *src, const char end_ch)
 {
 	int i = 0;
@@ -46,9 +50,20 @@ int get_term(char *dst, const char *src, const char end_ch)
 	return i;
 }
 
+// 计算给定要求的项长度
+int count_term(const char *src, const char end_ch)
+{
+	int i = 0;
+	while(src[i] != '\0' && src[i] != end_ch)
+	{
+		++i;
+	}
+	return i;
+}
+
 int get_gprid(const char *name)
 {
-	for(int i = 0; i < (int)sizeof(gpr_name)/sizeof(const char *); ++i)
+	for(int i = 0; i < (int)(sizeof(gpr_name)/sizeof(const char *)); ++i)
 	{
 		if(0 == strcmp(name, gpr_name[i]))
 		{
@@ -192,7 +207,7 @@ int parse_asm(const char* _buf, instr_t *_ins)
 	sscanf(_buf, "%s", buf);
 	strupr(buf);
 	int inst_id = -1;
-	for(int i = 0; i < (int)sizeof(insts_name)/sizeof(const char *); ++i)
+	for(int i = 0; i < (int)(sizeof(insts_name)/sizeof(const char *)); ++i)
 	{
 		if(0 == strcmp(buf, insts_name[i]))
 		{
@@ -254,10 +269,10 @@ int parse_asm(const char* _buf, instr_t *_ins)
 				if(_buf[q + 1] == 'x')
 				{
 					q += 2;
-					q += sscanf(_buf + q, "%x", &ans);
+					q += sscanf(_buf + q, "%x", &ans); // FIXME: use other function to read in
 				}
 			}
-			else q += sscanf(_buf + q, "%d", &ans);
+			else q += sscanf(_buf + q, "%d", &ans);// FIXME: or the loc will be fake
 			if(src[p] == '&') ans >>= 2;
 			ans *= m;
 			_ins->imm = ans;
@@ -271,5 +286,5 @@ int parse_asm(const char* _buf, instr_t *_ins)
 		++q;
 	}
 
-	return 0;
+	return q;
 }
