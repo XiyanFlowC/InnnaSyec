@@ -332,7 +332,7 @@ int parse_param(const char *_buf, const char *src, instr_t *_ins)
 			// get_term(buf, _buf + q, src[p + 1]);
 			int ans;
 			q += parse_int(&ans, _buf + q);
-			_ins->imm = ans;
+			src[p] == '&' ? _ins->imm = ans >> 2 : _ins->imm = ans;
 			++p;
 			continue;
 		}

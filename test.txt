@@ -1,22 +1,22 @@
-#define DBG_VER
+#include config.txt
 
-#ifdef JP_VER ; for jp ver
+#ifdef JP_VER ; for jp edi
 
 #include jpdefs.txt
 
-#elifd JPB_VER
+#elifd JPB_VER ; for jp best edi
 
 #include bestdefs.txt
 
-#elifd AM_VER
+#elifd AM_VER ; for USA edi
 
 #include nisdefs.txt
 
-#elifd EU_VER
+#elifd EU_VER ; for Europe edi
 
 #include 505defs.txt
 
-#elifd DBG_VER
+#elifd DBG_VER ; for NISA Prototype(Preview code)
 
 #include dbgdefs.txt
 
@@ -24,15 +24,25 @@
 
 ; codes:
 .offset ff000
-.loc    893760
 .galign 8
 
-host_path_pat: .asciiz "host0:%s"
-open_suc_msg:  .asciiz "Open %s from host!\n"
-malloc_fil_msg:.asciiz "Can't alloc memory for %s!\n"
-rd_fil_msg:    .asciiz "Can't read %s!\n"
+.vma printf_loc
+printf:
 
-.loc    5cffc ; 这是错的地址，只是调试用
-la      a1, open_suc_msg
-jal     printf
-dmove   s1, a2
+#ifdef REPLACE_DEBUG_PRINTF
+.vma hprintf_loc
+hprintf:
+  j printf
+  nop
+#endif
+#ifdef REPLACE_DEBUG_PUTS
+.vma hputs_loc
+hputs:
+  dmove a1, a0
+  la a0, puts_str
+  ; FIXME LA LI在延迟槽中的处理
+  j printf
+  nop
+puts_str:
+  .asciiz "%s\n"
+#endif

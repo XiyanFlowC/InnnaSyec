@@ -389,7 +389,7 @@ int check()
         }
 
         // 常规指令字处理
-        if (body[0] == '\0')
+        if ((body = str_first_not(body, '\r')) == NULL)//空行
         {
             ++line;
             continue;
@@ -533,13 +533,13 @@ int check()
                 int rst = sscanf(body + 4, "%llX,%llX", &tmp1, &tmp2);
                 if (rst == 1)
                 {
-                    now_loc = tmp1;
+                    now_loc = tmp1 - offset;
                     warn_loc = ~0x0;
                 }
                 else if (rst == 2)
                 {
-                    now_loc = tmp1;
-                    warn_loc = tmp2;
+                    now_loc = tmp1 - offset;
+                    warn_loc = tmp2 - offset;
                 }
                 else
                 {
@@ -582,7 +582,11 @@ int mkasm(unsigned char *buf, char *asmb)
     if(is_lbinst(mnemonic))
     {
         char *lbl = str_last(asmb, ',');
-        if(lbl == NULL) return -3;
+        if(lbl == NULL) 
+        {
+            lbl = str_first(asmb, ' ');
+            if(lbl == NULL) return -3;
+        }
         lbl = str_first_not(lbl + 1, '\r');
         if(lbl == NULL) return -3;
         for(int i = 0; i < tag_p; ++i)
@@ -614,11 +618,12 @@ int mkasm(unsigned char *buf, char *asmb)
             if(parse_param(para, "$t, #", &tmp) < 0) return -1;
             if(tmp.imm > 0x7fff)
             {
-                int low = tmp.imm && 0xffff;
+                int low = tmp.imm & 0xffff;
                 tmp.opcode = LUI;
                 tmp.imm >>= 16;
                 if(low > 0x7fff) tmp.imm += 1;
-                *((unsigned int *)buf++) = asmble(tmp);
+                *((unsigned int *)buf) = asmble(tmp);
+                buf += 4;
                 tmp.opcode = ADDIU;
                 tmp.rs = zero;
                 tmp.imm = low > 0x7fff ? 0x10000 - low : low;
@@ -628,7 +633,7 @@ int mkasm(unsigned char *buf, char *asmb)
             if(tmp.imm < -0x8000)
             {
                 error(9501);
-                int low = tmp.imm && 0xffff;
+                int low = tmp.imm & 0xffff;
                 return 8;
             }
             tmp.opcode = ADDIU;
@@ -648,11 +653,12 @@ int mkasm(unsigned char *buf, char *asmb)
                 {
                     sprintf(lbl, "%llu", tag_vma[i]);
                     parse_param(str_first_not(asmb + 2, '\r'), "$t, #", &ans);
-                    int low = ans.imm && 0xffff;
+                    int low = ans.imm & 0xffff;
                     ans.opcode = LUI;
                     ans.imm >>= 16;
                     if(low > 0x7fff) ans.imm += 1;
-                    *((unsigned int *)buf++) = asmble(ans);
+                    *((unsigned int *)buf) = asmble(ans);
+                    buf += 4;
                     ans.opcode = ADDIU;
                     ans.rs = zero;
                     ans.imm = low > 0x7fff ? 0x10000 - low : low;
@@ -746,7 +752,7 @@ int genasm(unsigned char *buffer)
         // }
 
         // 常规指令字处理
-        if (body[0] == '\0')
+        if ((body = str_first_not(body, '\r')) == NULL)//空行
         {
             ++line;
             continue;
@@ -951,13 +957,13 @@ int genasm(unsigned char *buffer)
                 int rst = sscanf(body + 4, "%llX,%llX", &tmp1, &tmp2);
                 if (rst == 1)
                 {
-                    now_loc = tmp1;
+                    now_loc = tmp1 - offset;
                     warn_loc = ~0x0;
                 }
                 else if (rst == 2)
                 {
-                    now_loc = tmp1;
-                    warn_loc = tmp2;
+                    now_loc = tmp1 - offset;
+                    warn_loc = tmp2 - offset;
                 }
                 else
                 {
