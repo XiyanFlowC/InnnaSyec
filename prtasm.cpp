@@ -39,6 +39,17 @@ char *str_first(const char *src, const char ch)
     return (char *)src;
 }
 
+char *str_last(const char *src, const char ch)
+{
+    const char *end = src;
+    src += strlen(src);
+    while (src != end && *src != ch)
+        --src;
+    if (*src != ch)
+        return NULL;
+    return (char *)src;
+}
+
 static int mode = 0;
 #define MODE_SASM 0
 #define MODE_SDISASM 1
@@ -54,8 +65,9 @@ static int dmode = 2;
 #define DM_DQ 4
 static unsigned long long dasm_sta = 0x0, dasm_end = 0xffffffffffffffff;
 static FILE *input, *output, *script;
-static char *scriptnm;
+static char *scriptnm, *outputnm;
 static bool do_invalid = false /*, do_purge = true*/, stop_if_overline = false, stop_firsterr = false;
+int cerror = 0, cwarn = 0;
 
 int handle_i(const char *filename);
 int handle_o(const char *filename);
@@ -228,8 +240,17 @@ int main(int argc, const char **argv)
             fatal(2003);
         if (0 == check())
             genasm(buf);
+
+        if(!cerror)
+            fwrite(buf, len, 1, output);
+        else
+        {
+            fclose(output);
+            output = NULL;
+            remove(outputnm);
+        }
         
-        fwrite(buf, len, 1, output);
+        printf("汇编处理结束：%d个错误，%d个警告。\n", cerror, cwarn);
     }
 
     if (output)
@@ -238,6 +259,7 @@ int main(int argc, const char **argv)
         fclose(input);
     free(buf);
     free(scriptnm);
+    free(outputnm);
 
     return 0;
 }
@@ -265,27 +287,18 @@ int get_asm_len(const char *src)
     char mnemonic[128];
     src = str_first_not(src, '\r');
     int eles = sscanf(src, "%s", mnemonic);
-    strupr(mnemonic);
-    int inst_id = -1;
-    for (int i = 0; i < insts_cnt; ++i)
-    {
-        if (0 == strcmp(mnemonic, insts_name[i]))
-        {
-            return 4;
-        }
-    }
+    if(inst_id_bynm(mnemonic) != -1) return 4;
     if(0 == strcmp(mnemonic, "LI"))
     {
-        int val;
         char *para = str_first_not(src + 2, '\r');
-        if(para[0] == '0' && para[1] == 'x') sscanf(para + 2, "%X", &val);
-        else sscanf(para, "%d", &val);
-        if(val > 0x7fff || val < -0x8000) return 8;
+        instr_t tmp;
+        if(parse_param(para, "$t, #", &tmp) < 0) return -1;
+        if(tmp.imm > 0x7fff || tmp.imm < -0x8000) return 8;
         return 4;
     }
     else if(0 == strcmp(mnemonic, "LA"))
     {
-        return 4;
+        return 8;
     }
     else return -1;
 }
@@ -410,6 +423,10 @@ int check()
             else if (0 == strcmp(cmd, "ascii"))
             {
                 char *sta = str_first(linebuf, '"');
+                if(sta == NULL)
+                    aerror(line, 3108, linebuf);
+                else
+                    ++sta;
                 int leng = 0;
                 while (*sta != '\0') // 处理字符串
                 {
@@ -436,6 +453,10 @@ int check()
             else if (0 == strcmp(cmd, "asciiz"))
             {
                 char *sta = str_first(linebuf, '"');
+                if(sta == NULL)
+                    aerror(line, 3108, linebuf);
+                else
+                    ++sta;
                 int leng = 0;
                 while (*sta != '\0') // 处理字符串
                 {
@@ -506,6 +527,25 @@ int check()
                     warn_loc = tmp1 + tmp2;
                 }
             }
+            else if (0 == strcmp(cmd, "vma"))
+            {
+                unsigned long long tmp1, tmp2;
+                int rst = sscanf(body + 4, "%llX,%llX", &tmp1, &tmp2);
+                if (rst == 1)
+                {
+                    now_loc = tmp1;
+                    warn_loc = ~0x0;
+                }
+                else if (rst == 2)
+                {
+                    now_loc = tmp1;
+                    warn_loc = tmp2;
+                }
+                else
+                {
+                    aerror(line, 3108, linebuf);
+                }
+            }
             else
             {
                 aerror(line, 3110, linebuf);
@@ -527,35 +567,105 @@ int check()
     return 0;
 }
 
+int is_lbinst(char *nm)
+{
+    strupr(nm);
+    if(nm[0] == 'J') return 1;
+    if(nm[0] == 'B' && nm[1] != 'R') return 1; // r for break
+    return 0;
+}
+
 int mkasm(unsigned char *buf, char *asmb)
 {
+    char mnemonic[64];
+    sscanf(asmb, "%s", mnemonic);
+    if(is_lbinst(mnemonic))
+    {
+        char *lbl = str_last(asmb, ',');
+        if(lbl == NULL) return -3;
+        lbl = str_first_not(lbl + 1, '\r');
+        if(lbl == NULL) return -3;
+        for(int i = 0; i < tag_p; ++i)
+        {
+            if(0 == strcmp(tag_nm[i], lbl))
+            {
+                sprintf(lbl, "%llu", tag_vma[i]);
+                goto mkasm_nparse;
+            }
+        }
+        return -4;
+    }
+    mkasm_nparse:
+
     instr_t ans;
     int ret = parse_asm(asmb, &ans);
-    // if(ret != strlen(asmb)) return -1000;
     if(ret < -1) return ret;
-    if(ret == -1)
+    if(ret == -1) // 非真指令的处理（伪指令判别）
     {
         char mnemonic[128];
         asmb = str_first_not(asmb, '\r');
         int eles = sscanf(asmb, "%s", mnemonic);
         strupr(mnemonic);
 
-        if(strcpy(mnemonic, "LI") == 0)
+        if(strcmp(mnemonic, "LI") == 0)
         {
-            fatal(9501);
-            int val;
             char *para = str_first_not(asmb + 2, '\r');
-            if(para[0] == '0' && para[1] == 'x') sscanf(para + 2, "%X", &val);
-            else sscanf(para, "%d", &val);
-            if(val > 0x7fff || val < -0x8000)
+            instr_t tmp;
+            if(parse_param(para, "$t, #", &tmp) < 0) return -1;
+            if(tmp.imm > 0x7fff)
             {
+                int low = tmp.imm && 0xffff;
+                tmp.opcode = LUI;
+                tmp.imm >>= 16;
+                if(low > 0x7fff) tmp.imm += 1;
+                *((unsigned int *)buf++) = asmble(tmp);
+                tmp.opcode = ADDIU;
+                tmp.rs = zero;
+                tmp.imm = low > 0x7fff ? 0x10000 - low : low;
+                *((unsigned int *)buf) = asmble(tmp);
                 return 8;
             }
+            if(tmp.imm < -0x8000)
+            {
+                error(9501);
+                int low = tmp.imm && 0xffff;
+                return 8;
+            }
+            tmp.opcode = ADDIU;
+            tmp.rs = zero;
+            *((unsigned int *)buf) = asmble(ans);
             return 4;
+        }
+        else if(strcmp(mnemonic, "LA") == 0)
+        {
+            char *lbl = str_first(asmb + 2, ',');
+            if(lbl == NULL) return -3;
+            lbl = str_first_not(lbl + 1, '\r');
+            if(lbl == NULL) return -3;
+            for(int i = 0; i < tag_p; ++i)
+            {
+                if(0 == strcmp(tag_nm[i], lbl))
+                {
+                    sprintf(lbl, "%llu", tag_vma[i]);
+                    parse_param(str_first_not(asmb + 2, '\r'), "$t, #", &ans);
+                    int low = ans.imm && 0xffff;
+                    ans.opcode = LUI;
+                    ans.imm >>= 16;
+                    if(low > 0x7fff) ans.imm += 1;
+                    *((unsigned int *)buf++) = asmble(ans);
+                    ans.opcode = ADDIU;
+                    ans.rs = zero;
+                    ans.imm = low > 0x7fff ? 0x10000 - low : low;
+                    *((unsigned int *)buf) = asmble(ans);
+                    return 8;
+                }
+            }
+            return -4;
         }
     }
     else
     {
+        if(ret != strlen(asmb)) return -1000;
         *((unsigned int *)buf) = asmble(ans);
         return 4;
     }
@@ -624,16 +734,16 @@ int genasm(unsigned char *buffer)
         if (flg)
             aerror(line, 3004, linebuf);
 
-        // 标签处理。FIXME: 因为目前所有数字都是位于末尾且只有一个，姑且先这么瞎搞一下：
-        for(int i = 0; i < tag_p; ++i)
-        {
-            char *pos;
-            pos = strstr(body, tag_nm[i]);
-            if(pos != NULL)
-            {
-                sprintf(pos, "0x%llX", tag_vma[i]);
-            }
-        }
+        // // 标签处理。: 因为目前所有数字都是位于末尾且只有一个，姑且先这么瞎搞一下：
+        // for(int i = 0; i < tag_p; ++i)
+        // {
+        //     char *pos;
+        //     pos = strstr(body, tag_nm[i]);
+        //     if(pos != NULL)
+        //     {
+        //         sprintf(pos, "0x%llX", tag_vma[i]);
+        //     }
+        // }
 
         // 常规指令字处理
         if (body[0] == '\0')
@@ -696,6 +806,10 @@ int genasm(unsigned char *buffer)
             else if (0 == strcmp(cmd, "ascii"))
             {
                 char *sta = str_first(linebuf, '"');
+                if(sta == NULL)
+                    aerror(line, 3108, linebuf);
+                else
+                    ++sta;
                 while (*sta != '\0') // 处理字符串
                 {
                     if (*sta == '\\')
@@ -739,6 +853,10 @@ int genasm(unsigned char *buffer)
             else if (0 == strcmp(cmd, "asciiz"))
             {
                 char *sta = str_first(linebuf, '"');
+                if(sta == NULL)
+                    aerror(line, 3108, linebuf);
+                else
+                    ++sta;
                 while (*sta != '\0') // 处理字符串
                 {
                     if (*sta == '\\')
@@ -827,6 +945,25 @@ int genasm(unsigned char *buffer)
                     warn_loc = tmp1 + tmp2;
                 }
             }
+            else if (0 == strcmp(cmd, "vma"))
+            {
+                unsigned long long tmp1, tmp2;
+                int rst = sscanf(body + 4, "%llX,%llX", &tmp1, &tmp2);
+                if (rst == 1)
+                {
+                    now_loc = tmp1;
+                    warn_loc = ~0x0;
+                }
+                else if (rst == 2)
+                {
+                    now_loc = tmp1;
+                    warn_loc = tmp2;
+                }
+                else
+                {
+                    aerror(line, 4108, linebuf);
+                }
+            }
             else
             {
                 aerror(line, 4110, linebuf);
@@ -839,6 +976,7 @@ int genasm(unsigned char *buffer)
             if(ret == -1) aerror(line, 8000, linebuf);
             else if(ret == -2) aerror(line, 8001, linebuf);
             else if(ret == -3) aerror(line, 8002, linebuf);
+            else if(ret == -4) aerror(line, 4201, linebuf);
             else if(ret == -1000) aerror(line, 4200, linebuf);
             else now_loc += ret;
         }
@@ -891,6 +1029,7 @@ int handle_o(const char *filename)
         fatal(1901);
 
     output = fopen(filename, mode == MODE_SASM ? "wb" : "w");
+    outputnm = strdup(filename);
     if (output == NULL)
     {
         int err = errno;
@@ -995,6 +1134,7 @@ static struct err_t
     {3105, "一次解析时发生异常。位置定义语句参数不正确。期待1～2个16进制整数。"},
     {3106, "一次解析时发生异常。容纳块定义语句参数不正确。期待2个16进制整数。"},
     {3107, "一次解析时发生异常。空汇编器指令。"},
+    {3108, "一次解析时发生异常。虚拟地址定义语句参数不正确。期待1～2个16进制整数。"},
     {3110, "一次解析时发生异常。汇编器指令解析失败。不是有效的汇编器控制指令。"},
     {3199, "一次解析时遭遇致命错误。字符串自对齐指令参数被指定为0。"},
     {3200, "一次解析时发生异常。汇编指令解析失败。"},
@@ -1008,21 +1148,24 @@ static struct err_t
     {4105, "二次解析时发生异常。位置定义语句参数不正确。期待1～2个16进制整数。"},
     {4106, "二次解析时发生异常。容纳块定义语句参数不正确。期待2个16进制整数。"},
     {4107, "二次解析时发生异常。空汇编器指令。"},
+    {4108, "二次解析时发生异常。虚拟地址定义语句参数不正确。期待1～2个16进制整数。"},
     {4110, "二次解析时发生异常。汇编器指令解析失败。不是有效的汇编器控制指令。"},
     {4199, "二次解析时遭遇致命错误。字符串自对齐指令参数被指定为0。"},
     {4200, "二次解析时发现异常。汇编指令解析完成时指令行未穷尽。"},
+    {4201, "二次解析时发现异常。所指定的标签不存在。"},
     {4900, "二次解析时发生异常。容纳块溢出。"},
     {4910, "二次解析时发现异常。换行符未能取得CR。检查文件格式或操作系统。"},
     {8000, "无效汇编指令。"},
     {8001, "未知寄存器名。"},
     {8002, "命令语法不正确。"},
     {9001, "处理LI指令时，所给数值超过阈限。"},
-    {9501, "LI伪指令未实现。可能永远也无法实现。"},
+    {9501, "LI伪指令对负数情况未实现。"},
     {9505, ".qword（128位数定义）功能未实现。"},
     {9999, "索引未命中。"}};
 
 void error(int code)
 {
+    ++cerror;
     for (int i = 0; i < (int)sizeof(errs)/(int)sizeof(err_t); ++i)
     {
         if (errs[i].code == code)
@@ -1051,6 +1194,7 @@ void fatal(int code)
 
 void warn(int code)
 {
+    ++cwarn;
     for (int i = 0; i < (int)sizeof(errs)/(int)sizeof(err_t); ++i)
     {
         if (errs[i].code == code)

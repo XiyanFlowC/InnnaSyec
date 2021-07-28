@@ -37,6 +37,65 @@ const char* gpr_name[] = {
 	"pc", "hi", "lo",
 };
 
+int dechex(const char ch)
+{
+	if(ch >= 'A' && ch <= 'F') return ch - 'A' + 10;
+	if(ch >= 'a' && ch <= 'f') return ch - 'a' + 10;
+	if(ch >= '0' && ch <= '9') return ch - '0';
+	return -1;
+}
+
+int parse_int(int *result, const char *src)
+{
+	int i = 0, m = 1;
+	if(*src == '-')
+	{
+		++src;
+		m = -1;
+		++i;
+	}
+	*result = 0;
+	if(*src == '0')
+	{
+		if(src[1] == 'x') // hex
+		{
+			src += 2, i += 2;
+			int tmp;
+			while(-1 != (tmp = dechex(*src++)))
+			{
+				++i;
+				*result = *result << 4 + tmp;
+			}
+			*result *= m;
+			return i;
+		}
+		if(src[1] >= '0' && src[1] <= '7') // oct
+		{
+			src ++;
+			i++;
+			while(*src <= '7' && *src >= '0')
+			{
+				*result = (*result << 3) + *src - '0';
+				++i;
+			}
+			*result *= m;
+			return i;
+		}
+		return 1; // 十进制的单个‘0’
+	}
+	else if (*src >= '0' && *src <= '9')
+	{
+		while(*src >= '0' && *src <= '9')
+		{
+			*result = *result * 10 + *src++ - '0';
+			++i;
+		}
+		*result *= m;
+		return i;
+	}
+	return -1;
+}
+
 // 获取一个由end_ch终止的项，end_ch本身不含于其中。
 int get_term(char *dst, const char *src, const char end_ch)
 {
@@ -201,28 +260,41 @@ int printdis(char *_buf, instr_t _ins)
 	return j;
 }
 
+int inst_id_bynm(char *name)
+{
+	strupr(name);
+	for(int i = 0; i < (int)(sizeof(insts_name)/sizeof(const char *)); ++i)
+	{
+		if(0 == strcmp(name, insts_name[i]))
+		{
+			return i;
+		}
+	}
+	return -1;
+}
+
 int parse_asm(const char* _buf, instr_t *_ins)
 {
 	char buf[128];
 	sscanf(_buf, "%s", buf);
-	strupr(buf);
-	int inst_id = -1;
-	for(int i = 0; i < (int)(sizeof(insts_name)/sizeof(const char *)); ++i)
-	{
-		if(0 == strcmp(buf, insts_name[i]))
-		{
-			inst_id = i;
-			break;
-		}
-	}
-	if(inst_id == -1)
-	{
-		return -1;
-	}
+	
+	int inst_id = inst_id_bynm(buf);
+	if(inst_id == -1) return -1;
 	_ins->opcode = inst_id;
-	int p, q = strlen(buf); // 模板、缓冲区游标。
+
+	int q = strlen(buf);
+
+	int ret = parse_param(_buf + q, insts_tmpl[inst_id] + q, _ins);
+	if(ret < 0) return ret;
+
+	return q + ret;
+}
+
+int parse_param(const char *_buf, const char *src, instr_t *_ins)
+{
+	char buf[128];
+	int p, q = 0; // 模板、缓冲区游标。
 	p = q;
-	const char* src = insts_tmpl[inst_id];
 	while(src[p] != '\0')
 	{
 		if(src[p] == ' ') // blank chars
@@ -258,23 +330,8 @@ int parse_asm(const char* _buf, instr_t *_ins)
 		if(src[p] == '#' || src[p] == '&')
 		{
 			// get_term(buf, _buf + q, src[p + 1]);
-			int m = 1, base = 10, ans = 0;
-			if(_buf[q] == '-')
-			{
-				m = -1;
-				++q;
-			}
-			if(_buf[q] == '0')
-			{
-				if(_buf[q + 1] == 'x')
-				{
-					q += 2;
-					q += sscanf(_buf + q, "%x", &ans); // FIXME: use other function to read in
-				}
-			}
-			else q += sscanf(_buf + q, "%d", &ans);// FIXME: or the loc will be fake
-			if(src[p] == '&') ans >>= 2;
-			ans *= m;
+			int ans;
+			q += parse_int(&ans, _buf + q);
 			_ins->imm = ans;
 			++p;
 			continue;
@@ -285,6 +342,5 @@ int parse_asm(const char* _buf, instr_t *_ins)
 		++p;
 		++q;
 	}
-
 	return q;
 }

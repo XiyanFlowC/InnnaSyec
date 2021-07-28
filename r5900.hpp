@@ -16,6 +16,11 @@ int get_term(char *dst, const char *src, const char end_ch);
 
 int count_term(const char *src, const char end_ch);
 
+// 解析整型
+// 允许0x、0前缀表示的16进制及8进制解析。允许负号前缀。
+// 返回成功处理的字符个数，数字格式错误返回-1
+int parse_int(int *result, const char *src);
+
 extern const char* insts_name[];
 
 extern const char* insts_tmpl[];
@@ -58,11 +63,22 @@ int exec_ins(instr_t ins);
 // 打印
 int printdis(char* _buf, instr_t _ins);
 
+// 通过指令名获取指令id
+// 返回值：指令id，失败返回-1
+int inst_id_bynm(char *name);
+
 // 解析字符形式汇编指令（仅真指令，伪指令不可处理）
 // 返回值：处理成功的字符数，失败时：
 // -1 指令名未知
 // -2 寄存器名未知
 // -3 格式解析错误
 int parse_asm(const char* _buf, instr_t *_ins);
+
+// 解析字符形式汇编参数
+// 返回值：处理成功的字符数，失败时：
+// -1 指令名未知
+// -2 寄存器名未知
+// -3 格式解析错误
+int parse_param(const char *_buf, const char *src, instr_t *_ins);
 
 #endif
