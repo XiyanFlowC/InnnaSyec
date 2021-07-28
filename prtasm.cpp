@@ -625,7 +625,7 @@ int mkasm(unsigned char *buf, char *asmb)
                 *((unsigned int *)buf) = asmble(tmp);
                 buf += 4;
                 tmp.opcode = ADDIU;
-                tmp.rs = zero;
+                tmp.rs = tmp.rt;
                 tmp.imm = low > 0x7fff ? 0x10000 - low : low;
                 *((unsigned int *)buf) = asmble(tmp);
                 return 8;
@@ -660,7 +660,7 @@ int mkasm(unsigned char *buf, char *asmb)
                     *((unsigned int *)buf) = asmble(ans);
                     buf += 4;
                     ans.opcode = ADDIU;
-                    ans.rs = zero;
+                    ans.rs = ans.rt;
                     ans.imm = low > 0x7fff ? 0x10000 - low : low;
                     *((unsigned int *)buf) = asmble(ans);
                     return 8;
