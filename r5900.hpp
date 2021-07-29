@@ -12,6 +12,8 @@
 char *strupr(char *str);
 #endif
 
+// 获取一个以end_ch结尾的项到dst
+// 返回值：成功获取的字符个数
 int get_term(char *dst, const char *src, const char end_ch);
 
 int count_term(const char *src, const char end_ch);

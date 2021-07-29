@@ -11,7 +11,7 @@ MIPS R5900（又称TX79）的逆向辅助工具。
 Firstly, you need to build simpgen:
 
 首先构建simpgen：
-```
+```bash
 cl simpgen.cpp /utf-8 /O2 # Windows
 g++ simpgen.cpp -o simpgen -O2 # Linux
 ```
@@ -19,14 +19,14 @@ g++ simpgen.cpp -o simpgen -O2 # Linux
 Then, you should build mips5900 description include files.
 
 然后用simpgen生成嵌入文件。
-```
+```bash
 simpgen -i mips5900.cpp -o mips5900
 ```
 
 After that, you can compile the program:
 
 然后构建项目。
-```
+```batch
 cl r5900.cpp /c /O2 /utf-8
 cl prtasm.cpp /c /O2 /utf-8
 link prtasm.obj r5900.obj
@@ -34,13 +34,25 @@ link prtasm.obj r5900.obj
 or...
 
 或者……
-```
+```bash
 g++ r5900.cpp prtasm.cpp -o prtasm
 ```
 
 If you need help, just use:
 
 若需要使用帮助，键入：
-```
+```bash
 ./prtasm --help
+```
+
+此外，如果有预处理器指令，请额外构建：
+```bash
+g++ preprocessor.cpp -o preprocessor
+```
+
+## Usage
+以所给例子（目前仅为DEBUG编写了样例）：
+```bash
+preprocessor test.txt test.pp.txt # 预处理test.txt
+prtasm -m a -i SLPS_256.04 -o test.elf -s src.pp.txt # 执行汇编
 ```
