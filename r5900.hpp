@@ -16,6 +16,8 @@ char *strupr(char *str);
 // 返回值：成功获取的字符个数
 int get_term(char *dst, const char *src, const char end_ch);
 
+// 计算一个以end_ch结尾的项的长度
+// 返回值：成功获取的字符个数
 int count_term(const char *src, const char end_ch);
 
 // 解析整型
@@ -23,12 +25,16 @@ int count_term(const char *src, const char end_ch);
 // 返回成功处理的字符个数，数字格式错误返回-1
 int parse_int(int *result, const char *src);
 
+// 指令名数组
 extern const char* insts_name[];
 
+// 指令模板数组
 extern const char* insts_tmpl[];
 
+// 总指令数
 extern const int insts_cnt;
 
+// 通用寄存器名数组
 extern const char* gpr_name[]; // mips r5900 regs
 
 enum gpr_nm {

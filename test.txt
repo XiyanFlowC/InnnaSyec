@@ -39,10 +39,8 @@ hprintf:
 .vma hputs_loc
 hputs:
   dmove a1, a0
-  la a0, puts_str
-  ; FIXME LA LI在延迟槽中的处理
   j printf
-  nop
+  la a0, puts_str
 puts_str:
   .asciiz "%s\n"
 #endif

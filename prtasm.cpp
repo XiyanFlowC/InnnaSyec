@@ -575,12 +575,15 @@ int is_lbinst(char *nm)
     return 0;
 }
 
+static int is_delayslot = 0;
+
 int mkasm(unsigned char *buf, char *asmb)
 {
     char mnemonic[64];
     sscanf(asmb, "%s", mnemonic);
     if(is_lbinst(mnemonic))
     {
+        if(is_delayslot) return -5;
         char *lbl = str_last(asmb, ',');
         if(lbl == NULL) 
         {
@@ -594,6 +597,7 @@ int mkasm(unsigned char *buf, char *asmb)
             if(0 == strcmp(tag_nm[i], lbl))
             {
                 sprintf(lbl, "%llu", tag_vma[i]);
+                is_delayslot = 2;
                 goto mkasm_nparse;
             }
         }
@@ -622,23 +626,32 @@ int mkasm(unsigned char *buf, char *asmb)
                 tmp.opcode = LUI;
                 tmp.imm >>= 16;
                 if(low > 0x7fff) tmp.imm += 1;
-                *((unsigned int *)buf) = asmble(tmp);
+                if(is_delayslot)
+                {
+                    *((unsigned int *)buf) = *((unsigned int *)buf - 1);
+                    *((unsigned int *)buf - 1) = asmble(tmp);
+                }
+                else
+                    *((unsigned int *)buf) = asmble(tmp);
                 buf += 4;
                 tmp.opcode = ADDIU;
                 tmp.rs = tmp.rt;
                 tmp.imm = low > 0x7fff ? 0x10000 - low : low;
                 *((unsigned int *)buf) = asmble(tmp);
+                if(is_delayslot) --is_delayslot;
                 return 8;
             }
             if(tmp.imm < -0x8000)
             {
                 error(9501);
                 int low = tmp.imm & 0xffff;
+                if(is_delayslot) --is_delayslot;
                 return 8;
             }
             tmp.opcode = ADDIU;
             tmp.rs = zero;
             *((unsigned int *)buf) = asmble(ans);
+            if(is_delayslot) --is_delayslot;
             return 4;
         }
         else if(strcmp(mnemonic, "LA") == 0)
@@ -657,12 +670,19 @@ int mkasm(unsigned char *buf, char *asmb)
                     ans.opcode = LUI;
                     ans.imm >>= 16;
                     if(low > 0x7fff) ans.imm += 1;
-                    *((unsigned int *)buf) = asmble(ans);
+                    if(is_delayslot)
+                    {
+                        *((unsigned int *)buf) = *((unsigned int *)buf - 1);
+                        *((unsigned int *)buf - 1) = asmble(ans);
+                    }
+                    else
+                        *((unsigned int *)buf) = asmble(ans);
                     buf += 4;
                     ans.opcode = ADDIU;
                     ans.rs = ans.rt;
                     ans.imm = low > 0x7fff ? 0x10000 - low : low;
                     *((unsigned int *)buf) = asmble(ans);
+                    if(is_delayslot) --is_delayslot;
                     return 8;
                 }
             }
@@ -671,8 +691,9 @@ int mkasm(unsigned char *buf, char *asmb)
     }
     else
     {
-        if(ret != strlen(asmb)) return -1000;
+        if(ret != (int)strlen(asmb)) return -1000;
         *((unsigned int *)buf) = asmble(ans);
+        if(is_delayslot) --is_delayslot;
         return 4;
     }
     return -3;
@@ -983,6 +1004,7 @@ int genasm(unsigned char *buffer)
             else if(ret == -2) aerror(line, 8001, linebuf);
             else if(ret == -3) aerror(line, 8002, linebuf);
             else if(ret == -4) aerror(line, 4201, linebuf);
+            else if(ret == -5) aerror(line, 4203, linebuf);
             else if(ret == -1000) aerror(line, 4200, linebuf);
             else now_loc += ret;
         }
@@ -1159,6 +1181,7 @@ static struct err_t
     {4199, "二次解析时遭遇致命错误。字符串自对齐指令参数被指定为0。"},
     {4200, "二次解析时发现异常。汇编指令解析完成时指令行未穷尽。"},
     {4201, "二次解析时发现异常。所指定的标签不存在。"},
+    {4203, "二次解析时发现异常。分支延迟槽中的跳转指令。"},
     {4900, "二次解析时发生异常。容纳块溢出。"},
     {4910, "二次解析时发现异常。换行符未能取得CR。检查文件格式或操作系统。"},
     {8000, "无效汇编指令。"},
