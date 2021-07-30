@@ -1,9 +1,0 @@
-#ifndef CONFIGED
-#define CONFIGED
-; 定义版本。 DBG_VER 表示 NISA Prototype
-#define DBG_VER
-
-; 是否重定向 DEBUG 输出
-#define REPLACE_DEBUG_PRINTF
-#define REPLACE_DEBUG_PUTS
-#endif

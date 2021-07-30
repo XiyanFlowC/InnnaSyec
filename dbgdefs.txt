@@ -1,3 +1,0 @@
-#define hprintf_loc 0x442b70
-#define hputs_loc 0x442d08
-#define printf_loc 0x40d790
