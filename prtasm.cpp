@@ -8,6 +8,9 @@
 // #include <map>
 #include <stdio.h>
 
+// 获取一个项，遇到第一个空白字符或行末时终止
+// 获取到的项存入dst中，假设src已经位于项的起始处
+// 返回值：成功取得的字符个数
 int get_term2(char *dst, const char *src)
 {
     int i = 0;
@@ -20,6 +23,7 @@ int get_term2(char *dst, const char *src)
     return i;
 }
 
+// 获取第一个非指定的ch的字符位置
 // 同时过滤空白字符（' ', '\\n', '\\t'）
 char *str_first_not(const char *src, const char ch)
 {
@@ -30,6 +34,8 @@ char *str_first_not(const char *src, const char ch)
     return (char *)src;
 }
 
+// 获取第一个指定的ch的字符位置
+// 同时过滤空白字符（' ', '\\n', '\\t'）
 char *str_first(const char *src, const char ch)
 {
     while (*src != '\0' && *src != ch)
@@ -39,6 +45,8 @@ char *str_first(const char *src, const char ch)
     return (char *)src;
 }
 
+// 获取最后一个指定的ch的字符位置
+// 同时过滤空白字符（' ', '\\n', '\\t'）
 char *str_last(const char *src, const char ch)
 {
     const char *end = src;
@@ -50,6 +58,7 @@ char *str_last(const char *src, const char ch)
     return (char *)src;
 }
 
+// 运行模式
 static int mode = 0;
 #define MODE_SASM 0
 #define MODE_SDISASM 1
@@ -57,14 +66,17 @@ static int mode = 0;
 // #define MODE_IDISASM 3
 // #define MODE_CASM    4
 // #define MODE_CDISASM 5
+
+// 反汇编时，不可认识的代码的输出方式（0.byte, 1.half, 2.word）
 static int dmode = 2;
 #define DM_DB 0
 #define DM_DH 1
 #define DM_DW 2
 #define DM_DD 3
 #define DM_DQ 4
+// 反汇编操作起讫地址
 static unsigned long long dasm_sta = 0x0, dasm_end = 0xffffffffffffffff;
-static FILE *input, *output, *script;
+static FILE *input, *output, *script; // TODO: include 支持，script相关全部重写
 static char *scriptnm, *outputnm;
 static bool do_invalid = false /*, do_purge = true*/, stop_if_overline = false, stop_firsterr = false;
 int cerror = 0, cwarn = 0;
@@ -75,8 +87,11 @@ int handle_s(const char *filename);
 int handle_D(const char *hexstr);
 int handle_A(const char *assembly);
 int show_help(const char *stub);
+// 获取并输出错误信息
 void error(int code);
+// 获取并输出警告信息
 void warn(int code);
+// 获取并输出致命信息，并中止程序
 void fatal(int code);
 void info(int code);
 int check();
@@ -264,24 +279,30 @@ int main(int argc, const char **argv)
     return 0;
 }
 
+// TODO: 重写所有和script相关部分以支持运行时预处理器（语法关联）
+// 获取并输出错误信息，并给出文件名、行号和行内容
 void aerror(int linec, int code, const char *line)
 {
     printf("(%s:%d) %s\n\t", scriptnm, linec, line);
     error(code);
 }
 
+// 获取并输出致命信息，并给出文件名、行号和行内容
+// 同时中止程序
 void afatal(int linec, int code, const char *line)
 {
     printf("(%s:%d) %s\n\t", scriptnm, linec, line);
     fatal(code);
 }
 
+// 获取并输出警告信息，并给出文件名、行号和行内容
 void awarn(int linec, int code, const char *line)
 {
     printf("(%s:%d) %s\n\t", scriptnm, linec, line);
     warn(code);
 }
 
+// 获取所给汇编指令文本对应指令大小
 int get_asm_len(const char *src)
 {
     char mnemonic[128];
@@ -303,12 +324,15 @@ int get_asm_len(const char *src)
     else return -1;
 }
 
+/******************************
+ * 汇编标签（位置）信息存储用 *
+ ******************************/
 #ifndef LABEL_MAX_COUNT
-#define LABEL_MAX_COUNT 512
+#define LABEL_MAX_COUNT 16384
 #endif
-unsigned long long tag_loc[LABEL_MAX_COUNT], tag_vma[LABEL_MAX_COUNT];
-char tag_nm[LABEL_MAX_COUNT][128];
-int tag_p = 0;
+static unsigned long long tag_loc[LABEL_MAX_COUNT], tag_vma[LABEL_MAX_COUNT];
+static char tag_nm[LABEL_MAX_COUNT][128];
+static int tag_p = 0;
 
 int check()
 {
@@ -316,7 +340,7 @@ int check()
     unsigned long long now_loc = 0, galign = 0, warn_loc = ~0x0;
     long long offset = 0;
     int line = 1;
-    while (EOF != fscanf(script, "%[^\n]", linebuf))
+    while (EOF != fscanf(script, "%[^\n]", linebuf)) // TODO: 重写所有和script相关部分以支持运行时预处理器（语法关联）
     {
         int t = fgetc(script);
         if('\n' != t && t != EOF) awarn(line, 3910, linebuf);
@@ -559,14 +583,16 @@ int check()
             else now_loc += len;
         }
 
-        linebuf[0] = '\0';
+        linebuf[0] = '\0';// TODO: 重写所有和script相关部分以支持运行时预处理器（语法关联）
         ++line;
     }
 
-    rewind(script);
+    rewind(script);// TODO: 重写所有和script相关部分以支持运行时预处理器（语法关联）
     return 0;
 }
 
+// 判断：是否为有分支延迟槽之指令（基于助记符）
+// TODO: 更精细的判断！
 int is_lbinst(char *nm)
 {
     strupr(nm);
@@ -597,7 +623,9 @@ int mkasm(unsigned char *buf, char *asmb)
             if(0 == strcmp(tag_nm[i], lbl))
             {
                 sprintf(lbl, "%llu", tag_vma[i]);
-                is_delayslot = 2;
+                is_delayslot = 2; // 每次返回前减一，由于跳转位于延迟槽的异常判断位于之前，这里可以设置
+                // 注解：即：本次返回减少1变为1，下一条位于延迟槽的指令方能正确判断。
+                // 注解：下一条延迟槽指令返回时减少1变为0，即恢复正常状态。
                 goto mkasm_nparse;
             }
         }
@@ -705,7 +733,7 @@ int genasm(unsigned char *buffer)
     unsigned long long now_loc = 0, galign = 0, warn_loc = ~0x0;
     long long offset = 0;
     int line = 1;
-    while (EOF != fscanf(script, "%[^\n]", linebuf))
+    while (EOF != fscanf(script, "%[^\n]", linebuf))// TODO: 重写所有和script相关部分以支持运行时预处理器（语法关联）
     {
         int t = fgetc(script);
         if('\n' != t && t != EOF) awarn(line, 4910, linebuf);
@@ -942,6 +970,11 @@ int genasm(unsigned char *buffer)
             }
             else if (0 == strcmp(cmd, "loc"))
             {
+                if(is_delayslot)
+                {
+                    is_delayslot = 0;
+                    awarn(line, 4120, linebuf);
+                }
                 unsigned long long tmp1, tmp2;
                 int rst = sscanf(body + 4, "%llX,%llX", &tmp1, &tmp2);
                 if (rst == 1)
@@ -961,6 +994,11 @@ int genasm(unsigned char *buffer)
             }
             else if (0 == strcmp(cmd, "bloc"))
             {
+                if(is_delayslot)
+                {
+                    is_delayslot = 0;
+                    awarn(line, 4120, linebuf);
+                }
                 unsigned long long tmp1, tmp2;
                 if (sscanf(body + 5, "%llX,%llX", &tmp1, &tmp2) != 2)
                 {
@@ -974,6 +1012,11 @@ int genasm(unsigned char *buffer)
             }
             else if (0 == strcmp(cmd, "vma"))
             {
+                if(is_delayslot)
+                {
+                    is_delayslot = 0;
+                    awarn(line, 4120, linebuf);
+                }
                 unsigned long long tmp1, tmp2;
                 int rst = sscanf(body + 4, "%llX,%llX", &tmp1, &tmp2);
                 if (rst == 1)
@@ -1009,11 +1052,13 @@ int genasm(unsigned char *buffer)
             else now_loc += ret;
         }
 
-        linebuf[0] = '\0';
+        linebuf[0] = '\0';// TODO: 重写所有和script相关部分以支持运行时预处理器（语法关联）
         ++line;
     }
+    if(is_delayslot)
+        awarn(line, 4121, linebuf);
 
-    rewind(script);
+    rewind(script);// TODO: 重写所有和script相关部分以支持运行时预处理器（语法关联）
     return 0;
 }
 
@@ -1149,7 +1194,7 @@ static struct err_t
     {2001, "输入文件未指定。"},
     {2002, "输出文件未指定。"},
     {2003, "脚本文件未指定。"},
-    {3000, "指定了过多的标签（默认512）。如需更大的空间，请重新编译，并指定更大的LABEL_MAX_COUNT。"},
+    {3000, "指定了过多的标签（默认16384）。如需更大的空间，请重新编译，并指定更大的LABEL_MAX_COUNT。"},
     {3001, "标签长度超出许可范围（128）。"},
     {3002, "标签中有空格。"},
     {3003, "标签中有制表符。"},
@@ -1178,6 +1223,8 @@ static struct err_t
     {4107, "二次解析时发生异常。空汇编器指令。"},
     {4108, "二次解析时发生异常。虚拟地址定义语句参数不正确。期待1～2个16进制整数。"},
     {4110, "二次解析时发生异常。汇编器指令解析失败。不是有效的汇编器控制指令。"},
+    {4120, "二次解析时发现异常。改变处理位置时仍在等待解析延迟槽指令。检查最后的跳转指令延迟槽定义。"},
+    {4121, "二次解析时发现异常。处理结束时仍在等待解析延迟槽指令。检查最后的跳转指令延迟槽定义。"},
     {4199, "二次解析时遭遇致命错误。字符串自对齐指令参数被指定为0。"},
     {4200, "二次解析时发现异常。汇编指令解析完成时指令行未穷尽。"},
     {4201, "二次解析时发现异常。所指定的标签不存在。"},

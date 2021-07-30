@@ -1,0 +1,26 @@
+r5900.o: r5900.cpp mipsincs
+	g++ r5900.cpp -c -o r5900.o -W
+
+simpgen: simpgen.cpp
+	g++ simpgen.cpp -o simpgen
+
+prtasm.o: prtasm.cpp
+	g++ prtasm.cpp -c -o prtasm.o -W
+
+prtasm: r5900.o prtasm.o
+	g++ prtasm.o r5900.o -o prtasm
+
+preprocessor: preprocessor.cpp
+	g++ preprocessor.cpp -o preprocessor -W
+
+all: prtasm preprocessor
+
+
+mipsincs: simpgen mips5900.txt
+	./simpgen -i mips5900.txt -o mips5900
+
+cleanobj:
+	rm *.o *.obj
+
+cleanall:
+	rm *.o simpgen prtasm mips5900_*.inc
