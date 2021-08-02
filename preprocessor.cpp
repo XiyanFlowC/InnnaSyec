@@ -215,47 +215,47 @@ int main(int argc, char **argv)
                 goto lineend;
             offset = strlen(tokenbuf) + 1;
 
-            if (0 == strcmp(tokenbuf, "#define"))
+            if (0 == strcmp(tokenbuf, "%define"))
             {
                 procdef(linebuf + offset);
                 goto lineend;
             }
-            else if (0 == strcmp(tokenbuf, "#undef"))
+            else if (0 == strcmp(tokenbuf, "%undef"))
             {
                 procudef(linebuf + offset);
                 goto lineend;
             }
-            else if (0 == strcmp(tokenbuf, "#ifdef"))
+            else if (0 == strcmp(tokenbuf, "%ifdef"))
             {
                 procifdef(linebuf + offset);
                 goto lineend;
             }
-            else if (0 == strcmp(tokenbuf, "#elifd"))
+            else if (0 == strcmp(tokenbuf, "%elifd"))
             {
                 procelifd(linebuf + offset);
                 goto lineend;
             }
-            else if (0 == strcmp(tokenbuf, "#ifndef"))
+            else if (0 == strcmp(tokenbuf, "%ifndef"))
             {
                 procndef(linebuf + offset);
                 goto lineend;
             }
             procline();
-            if (tokenbuf[0] != '#' && stage[stagep] == ST_NORMAL)
+            if (tokenbuf[0] != '%' && stage[stagep] == ST_NORMAL)
             {
                 fprintf(out, "%s\n", linebuf);
                 goto lineend;
             }
 
-            if (0 == strcmp(tokenbuf, "#else"))
+            if (0 == strcmp(tokenbuf, "%else"))
                 procelse();
-            else if (0 == strcmp(tokenbuf, "#endif"))
+            else if (0 == strcmp(tokenbuf, "%endif"))
                 procendif();
-            else if (0 == strcmp(tokenbuf, "#error"))
+            else if (0 == strcmp(tokenbuf, "%error"))
                 procerror(linebuf + offset);
-            else if (0 == strcmp(tokenbuf, "#warn"))
+            else if (0 == strcmp(tokenbuf, "%warn"))
                 procwarn(linebuf + offset);
-            else if (0 == strcmp(tokenbuf, "#include"))
+            else if (0 == strcmp(tokenbuf, "%include"))
             {
                 if(stage[stagep] != ST_NORMAL) goto lineend;
                 if (incp == 127)

@@ -8,6 +8,12 @@
 // #include <map>
 #include <stdio.h>
 
+#ifdef DEBUG
+#define debug(...) printf("[DEBUG]" __VA_ARGS__)
+#else
+#define debug(...)
+#endif
+
 // 获取一个项，遇到第一个空白字符或行末时终止
 // 获取到的项存入dst中，假设src已经位于项的起始处
 // 返回值：成功取得的字符个数
@@ -342,6 +348,8 @@ int check()
     int line = 1;
     while (EOF != fscanf(script, "%[^\n]", linebuf)) // TODO: 重写所有和script相关部分以支持运行时预处理器（语法关联）
     {
+        debug("line %d, %08X\n", line, now_loc);
+
         int t = fgetc(script);
         if('\n' != t && t != EOF) awarn(line, 3910, linebuf);
 
@@ -582,6 +590,7 @@ int check()
             if(len == -1) aerror(line, 3200, linebuf);
             else now_loc += len;
         }
+        debug("after line %d, %08X\n", line, now_loc);
 
         linebuf[0] = '\0';// TODO: 重写所有和script相关部分以支持运行时预处理器（语法关联）
         ++line;
@@ -596,18 +605,19 @@ int check()
 int is_lbinst(char *nm)
 {
     strupr(nm);
-    if(nm[0] == 'J') return 1;
-    if(nm[0] == 'B' && nm[1] != 'R') return 1; // r for break
+    if(nm[0] == 'J' && nm[1] != 'R') return 1; // r for jr
+    if(nm[0] == 'B' && nm[1] != 'R') return 2; // r for break
     return 0;
 }
 
 static int is_delayslot = 0;
 
-int mkasm(unsigned char *buf, char *asmb)
+int mkasm(unsigned char *buf, char *asmb, unsigned long long now_vma)
 {
     char mnemonic[64];
     sscanf(asmb, "%s", mnemonic);
-    if(is_lbinst(mnemonic))
+    int type = is_lbinst(mnemonic);
+    if(type)
     {
         if(is_delayslot) return -5;
         char *lbl = str_last(asmb, ',');
@@ -622,7 +632,10 @@ int mkasm(unsigned char *buf, char *asmb)
         {
             if(0 == strcmp(tag_nm[i], lbl))
             {
-                sprintf(lbl, "%llu", tag_vma[i]);
+                if(type == 1)
+                    sprintf(lbl, "%llu", tag_vma[i]);
+                else
+                    sprintf(lbl, "%lld", (long long)tag_vma[i] - (long long)now_vma - 1);
                 is_delayslot = 2; // 每次返回前减一，由于跳转位于延迟槽的异常判断位于之前，这里可以设置
                 // 注解：即：本次返回减少1变为1，下一条位于延迟槽的指令方能正确判断。
                 // 注解：下一条延迟槽指令返回时减少1变为0，即恢复正常状态。
@@ -664,7 +677,7 @@ int mkasm(unsigned char *buf, char *asmb)
                 buf += 4;
                 tmp.opcode = ADDIU;
                 tmp.rs = tmp.rt;
-                tmp.imm = low > 0x7fff ? 0x10000 - low : low;
+                tmp.imm = low > 0x7fff ? -(0x10000 - low) : low;
                 *((unsigned int *)buf) = asmble(tmp);
                 if(is_delayslot) --is_delayslot;
                 return 8;
@@ -678,7 +691,7 @@ int mkasm(unsigned char *buf, char *asmb)
             }
             tmp.opcode = ADDIU;
             tmp.rs = zero;
-            *((unsigned int *)buf) = asmble(ans);
+            *((unsigned int *)buf) = asmble(tmp);
             if(is_delayslot) --is_delayslot;
             return 4;
         }
@@ -708,7 +721,7 @@ int mkasm(unsigned char *buf, char *asmb)
                     buf += 4;
                     ans.opcode = ADDIU;
                     ans.rs = ans.rt;
-                    ans.imm = low > 0x7fff ? 0x10000 - low : low;
+                    ans.imm = low > 0x7fff ? -(0x10000 - low) : low;
                     *((unsigned int *)buf) = asmble(ans);
                     if(is_delayslot) --is_delayslot;
                     return 8;
@@ -1042,7 +1055,7 @@ int genasm(unsigned char *buffer)
 
         else
         {
-            int ret = mkasm(buffer + now_loc, body);
+            int ret = mkasm(buffer + now_loc, body, now_loc + offset);
             if(ret == -1) aerror(line, 8000, linebuf);
             else if(ret == -2) aerror(line, 8001, linebuf);
             else if(ret == -3) aerror(line, 8002, linebuf);

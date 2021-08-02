@@ -64,7 +64,7 @@ int parse_int(int *result, const char *src)
 			while(-1 != (tmp = dechex(*src++)))
 			{
 				++i;
-				*result = *result << 4 + tmp;
+				*result = (*result << 4) + tmp;
 			}
 			*result *= m;
 			return i;

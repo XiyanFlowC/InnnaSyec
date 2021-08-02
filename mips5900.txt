@@ -39,18 +39,6 @@ ADDIU
 %addiu $t, $s, #
 gpr[rt] = gpr[rs] + imm;@
 
-MOVE
-4
-0 5 b100001
-6 10 d0
-26 31 b0
-16 20 b0
-2
-11 15 rd
-21 25 rs
-%move $d, $s
-gpr[rd] = gpr[rs];@
-
 
 ADDU
 3
@@ -305,7 +293,7 @@ DADDIU
 %daddiu $t, $s, #
 gpr[rt] = gpr[rs] + (long long)imm;@
 
-DMOVE
+MOVE
 4
 26 31 b0
 6 10 b0
@@ -314,7 +302,7 @@ DMOVE
 2
 21 25 rs
 11 15 rd
-%dmove $d, $s
+%move $d, $s
 gpr[rd] = gpr[rs];@
 
 DADDU
