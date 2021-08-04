@@ -675,11 +675,12 @@ gpr[lo] = ans & 0xffffffff;@
 NOR
 3
 26 31 b0
-6 15 b0
+6 10 b0
 0 5 b100111
-2
+3
 21 25 rs
 16 20 rt
+11 15 rd
 %nor $d, $s, $t
 gpr[rd] = ~(gpr[rs] | gpr[rt]);@
 
