@@ -1,5 +1,6 @@
 #include "r5900.hpp"
 #include "liteopt.h"
+#include "xyutils.h"
 #include <errno.h>
 #include <string.h>
 // #include <string>
@@ -13,56 +14,6 @@
 #else
 #define debug(...)
 #endif
-
-// 获取一个项，遇到第一个空白字符或行末时终止
-// 获取到的项存入dst中，假设src已经位于项的起始处
-// 返回值：成功取得的字符个数
-int get_term2(char *dst, const char *src)
-{
-    int i = 0;
-    while(*src != '\0' && *src != '\t' && *src != ' ')
-    {
-        *dst++ = *src++;
-        ++i;
-    }
-    *dst = '\0';
-    return i;
-}
-
-// 获取第一个非指定的ch的字符位置
-// 同时过滤空白字符（' ', '\\n', '\\t'）
-char *str_first_not(const char *src, const char ch)
-{
-    while (*src != '\0' && (*src == ' ' || *src == '\n' || *src == '\t' || *src == ch))
-        ++src;
-    if (*src == '\0')
-        return NULL;
-    return (char *)src;
-}
-
-// 获取第一个指定的ch的字符位置
-// 同时过滤空白字符（' ', '\\n', '\\t'）
-char *str_first(const char *src, const char ch)
-{
-    while (*src != '\0' && *src != ch)
-        ++src;
-    if (*src == '\0')
-        return NULL;
-    return (char *)src;
-}
-
-// 获取最后一个指定的ch的字符位置
-// 同时过滤空白字符（' ', '\\n', '\\t'）
-char *str_last(const char *src, const char ch)
-{
-    const char *end = src;
-    src += strlen(src);
-    while (src != end && *src != ch)
-        --src;
-    if (*src != ch)
-        return NULL;
-    return (char *)src;
-}
 
 // 运行模式
 static int mode = 0;
@@ -292,6 +243,7 @@ void aerror(int linec, int code, const char *line)
     printf("(%s:%d) %s\n\t", scriptnm, linec, line);
     error(code);
 }
+#define ERROR(code) aerror(line, (code), linebuf)
 
 // 获取并输出致命信息，并给出文件名、行号和行内容
 // 同时中止程序
@@ -300,6 +252,7 @@ void afatal(int linec, int code, const char *line)
     printf("(%s:%d) %s\n\t", scriptnm, linec, line);
     fatal(code);
 }
+#define FATAL(code) afatal(line, (code), linebuf)
 
 // 获取并输出警告信息，并给出文件名、行号和行内容
 void awarn(int linec, int code, const char *line)
@@ -307,6 +260,7 @@ void awarn(int linec, int code, const char *line)
     printf("(%s:%d) %s\n\t", scriptnm, linec, line);
     warn(code);
 }
+#define WARN(code) awarn(line, (code), linebuf)
 
 // 获取所给汇编指令文本对应指令大小
 int get_asm_len(const char *src)
@@ -351,7 +305,7 @@ int check()
         debug("line %d, %08X\n", line, now_loc);
 
         int t = fgetc(script);
-        if('\n' != t && t != EOF) awarn(line, 3910, linebuf);
+        if('\n' != t && t != EOF) WARN(3910);
 
         int flg = 0;
         char *p = linebuf, *body = linebuf;
@@ -359,9 +313,9 @@ int check()
         if (now_loc >= warn_loc)
         {
             if (stop_if_overline)
-                afatal(line, 3900, linebuf);
+                FATAL(3900);
             else
-                awarn(line, 3900, linebuf);
+                WARN(3900);
             warn_loc = ~0x0;
         }
 
@@ -402,22 +356,22 @@ int check()
             ++p;
         }
         if (flg)
-            aerror(line, 3004, linebuf);
+            ERROR(3004);
 
         if (body != linebuf) // 有标签，要处理
         {
             char *str = str_first_not(linebuf, '\r');
             int count;
             if (tag_p >= LABEL_MAX_COUNT - 1)
-                afatal(line, 3000, linebuf);
+                FATAL(3000);
             tag_loc[tag_p] = now_loc;
             tag_vma[tag_p] = now_loc + offset;
             if ((count = get_term(tag_nm[tag_p], str, ':')) >= 128)
-                afatal(line, 3001, linebuf);
+                FATAL(3001);
             if (count != count_term(tag_nm[tag_p], ' '))
-                aerror(line, 3002, linebuf);
+                ERROR(3002);
             if (count != count_term(tag_nm[tag_p++], '\t'))
-                aerror(line, 3003, linebuf);
+                ERROR(3003);
         }
 
         // 常规指令字处理
@@ -432,7 +386,7 @@ int check()
             char cmd[128];
             if(get_term2(cmd, body + 1) == 0)
             {
-                awarn(line, 3107, linebuf);
+                WARN(3107);
             }
             else if (0 == strcmp(cmd, "byte"))
                 now_loc += 1;
@@ -448,7 +402,7 @@ int check()
             {
                 unsigned long long align = 0;
                 if (sscanf(body + 6, "%llu", &align) != 1)
-                    aerror(line, 3100, linebuf);
+                    ERROR(3100);
                 align -= 1;
                 now_loc = (now_loc + align) & ~align;
             }
@@ -456,7 +410,7 @@ int check()
             {
                 char *sta = str_first(linebuf, '"');
                 if(sta == NULL)
-                    aerror(line, 3108, linebuf);
+                    ERROR(3108);
                 else
                     ++sta;
                 int leng = 0;
@@ -478,7 +432,7 @@ int check()
                     continue;
                 }
                 if (*sta == '\0')
-                    aerror(line, 3101, linebuf);
+                    ERROR(3101);
                 now_loc += leng;
                 now_loc = (now_loc + galign) & ~galign;
             }
@@ -486,7 +440,7 @@ int check()
             {
                 char *sta = str_first(linebuf, '"');
                 if(sta == NULL)
-                    aerror(line, 3108, linebuf);
+                    ERROR(3108);
                 else
                     ++sta;
                 int leng = 0;
@@ -508,24 +462,24 @@ int check()
                     continue;
                 }
                 if (*sta == '\0')
-                    aerror(line, 3101, linebuf);
+                    ERROR(3101);
                 now_loc += leng + 1; // 末尾的填充零
                 now_loc = (now_loc + galign) & ~galign;
             }
             else if (0 == strcmp(cmd, "galign"))
             {
                 if (sscanf(body + 7, "%lld", &galign) != 1)
-                    aerror(line, 3102, linebuf);
+                    ERROR(3102);
                 if (galign % 2 != 0 && galign != 1)
-                    awarn(line, 3103, linebuf);
+                    WARN(3103);
                 if (galign == 0)
-                    afatal(line, 3199, linebuf);
+                    FATAL(3199);
                 galign -= 1;
             }
             else if (0 == strcmp(cmd, "offset"))
             {
                 if (sscanf(body + 7, "%llX", &offset) != 1)
-                    aerror(line, 3104, linebuf);
+                    ERROR(3104);
             }
             else if (0 == strcmp(cmd, "loc"))
             {
@@ -543,7 +497,7 @@ int check()
                 }
                 else
                 {
-                    aerror(line, 3105, linebuf);
+                    ERROR(3105);
                 }
             }
             else if (0 == strcmp(cmd, "bloc"))
@@ -551,7 +505,7 @@ int check()
                 unsigned long long tmp1, tmp2;
                 if (sscanf(body + 5, "%llX,%llX", &tmp1, &tmp2) != 2)
                 {
-                    aerror(line, 3106, linebuf);
+                    ERROR(3106);
                 }
                 else
                 {
@@ -575,19 +529,19 @@ int check()
                 }
                 else
                 {
-                    aerror(line, 3108, linebuf);
+                    ERROR(3108);
                 }
             }
             else
             {
-                aerror(line, 3110, linebuf);
+                ERROR(3110);
             }
         }
 
         else
         {
             int len = get_asm_len(body);
-            if(len == -1) aerror(line, 3200, linebuf);
+            if(len == -1) ERROR(3200);
             else now_loc += len;
         }
         debug("after line %d, %08X\n", line, now_loc);
@@ -749,7 +703,7 @@ int genasm(unsigned char *buffer)
     while (EOF != fscanf(script, "%[^\n]", linebuf))// TODO: 重写所有和script相关部分以支持运行时预处理器（语法关联）
     {
         int t = fgetc(script);
-        if('\n' != t && t != EOF) awarn(line, 4910, linebuf);
+        if('\n' != t && t != EOF) WARN(4910);
 
         int flg = 0;
         char *p = linebuf, *body = linebuf;
@@ -757,9 +711,9 @@ int genasm(unsigned char *buffer)
         if (now_loc >= warn_loc)
         {
             if (stop_if_overline)
-                afatal(line, 4900, linebuf);
+                FATAL(4900);
             else
-                awarn(line, 4900, linebuf);
+                WARN(4900);
             warn_loc = ~0x0;
         }
 
@@ -822,40 +776,72 @@ int genasm(unsigned char *buffer)
 
         else if (body[0] == '.') // 汇编器控制指令
         {
+            // long long tmp;
             static char cmd[128];
             static union
             {
                 unsigned char u8;
+                char i8;
                 unsigned short u16;
+                short i16;
                 unsigned int u32;
+                int i32;
                 unsigned long long u64;
+                long long i64;
             } tmp;
             
             if(get_term2(cmd, body + 1) == 0)
             {
-                awarn(line, 4107, linebuf);
+                WARN(4107);
             }
             else if (0 == strcmp(cmd, "byte"))
             {
-                sscanf(body + 5, "%hhu", &tmp.u8);
+                if(0 >= parse_int(&tmp.i64, body + 5))
+                    ERROR(4130);
+                if(tmp.u64 >= 0xff) WARN(4109);
                 *(buffer + now_loc) = tmp.u8;
                 now_loc += 1;
             }
             else if (0 == strcmp(cmd, "half"))
             {
-                sscanf(body + 5, "%hu", &tmp.u16);
+                if(0 >= parse_int(&tmp.i64, body + 5))
+                    ERROR(4130);
+                if(tmp.u64 >= 0xffff) WARN(4109);
                 *((unsigned short *)(buffer + now_loc)) = tmp.u16;
                 now_loc += 2;
             }
             else if (0 == strcmp(cmd, "word"))
             {
-                sscanf(body + 5, "%u", &tmp.u32);
+                int ret = parse_int(&tmp.i64, body + 5);
+                if(0 >= ret)
+                {
+                    if(ret == -1)
+                    {
+                        char *sta = str_first_not(body + 5, '\r');
+                        if(sta == NULL)
+                            ERROR(4131);
+                        for(int i = 0; i < tag_p; ++i)
+                        {
+                            if(0 == strcmp(sta, tag_nm[i]))
+                            {
+                                tmp.u32 = (unsigned int)tag_vma[i];
+                                goto ga_normrot;
+                            }
+                        }
+                        ERROR(4132);
+                    }
+                    else
+                        ERROR(4130);
+                }
+                ga_normrot:
+                if(tmp.u64 >= 0xffffffff) WARN(4109);
                 *((unsigned int *)(buffer + now_loc)) = tmp.u32;
                 now_loc += 4;
             }
             else if (0 == strcmp(cmd, "dword"))
             {
-                sscanf(body + 5, "%llu", &tmp.u64);
+                if(0 >= parse_int(&tmp.i64, body + 5))
+                    ERROR(4130);
                 *((unsigned long long *)(buffer + now_loc)) = tmp.u64;
                 now_loc += 8;
             }
@@ -1235,9 +1221,13 @@ static struct err_t
     {4106, "二次解析时发生异常。容纳块定义语句参数不正确。期待2个16进制整数。"},
     {4107, "二次解析时发生异常。空汇编器指令。"},
     {4108, "二次解析时发生异常。虚拟地址定义语句参数不正确。期待1～2个16进制整数。"},
+    {4109, "二次解析时发现异常。定义的数据大小超出定义空间极限。"},
     {4110, "二次解析时发生异常。汇编器指令解析失败。不是有效的汇编器控制指令。"},
     {4120, "二次解析时发现异常。改变处理位置时仍在等待解析延迟槽指令。检查最后的跳转指令延迟槽定义。"},
     {4121, "二次解析时发现异常。处理结束时仍在等待解析延迟槽指令。检查最后的跳转指令延迟槽定义。"},
+    {4130, "二次解析时发现异常。数字定义格式不正确或没有定义。"},
+    {4131, "二次解析时发现异常。尝试解析标签时未能取得标签起始。"},
+    {4132, "二次解析时发现异常。尝试解析标签时发现标签不存在。"},
     {4199, "二次解析时遭遇致命错误。字符串自对齐指令参数被指定为0。"},
     {4200, "二次解析时发现异常。汇编指令解析完成时指令行未穷尽。"},
     {4201, "二次解析时发现异常。所指定的标签不存在。"},

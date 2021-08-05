@@ -4,6 +4,7 @@
 #define __XY_DISASM_HXX_
 
 #include <limits.h>
+#include "xyutils.h"
 
 #include "mips5900_def.inc"
 #define INVALID -1
@@ -11,19 +12,6 @@
 #ifndef _WIN32
 char *strupr(char *str);
 #endif
-
-// 获取一个以end_ch结尾的项到dst
-// 返回值：成功获取的字符个数
-int get_term(char *dst, const char *src, const char end_ch);
-
-// 计算一个以end_ch结尾的项的长度
-// 返回值：成功获取的字符个数
-int count_term(const char *src, const char end_ch);
-
-// 解析整型
-// 允许0x、0前缀表示的16进制及8进制解析。允许负号前缀。
-// 返回成功处理的字符个数，数字格式错误返回-1
-int parse_int(int *result, const char *src);
 
 // 指令名数组
 extern const char* insts_name[];

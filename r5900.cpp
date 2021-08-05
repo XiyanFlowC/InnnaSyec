@@ -37,89 +37,6 @@ const char* gpr_name[] = {
 	"pc", "hi", "lo",
 };
 
-int dechex(const char ch)
-{
-	if(ch >= 'A' && ch <= 'F') return ch - 'A' + 10;
-	if(ch >= 'a' && ch <= 'f') return ch - 'a' + 10;
-	if(ch >= '0' && ch <= '9') return ch - '0';
-	return -1;
-}
-
-int parse_int(int *result, const char *src)
-{
-	int i = 0, m = 1;
-	if(*src == '-')
-	{
-		++src;
-		m = -1;
-		++i;
-	}
-	*result = 0;
-	if(*src == '0')
-	{
-		if(src[1] == 'x') // hex
-		{
-			src += 2, i += 2;
-			int tmp;
-			while(-1 != (tmp = dechex(*src++)))
-			{
-				++i;
-				*result = (*result << 4) + tmp;
-			}
-			*result *= m;
-			return i;
-		}
-		if(src[1] >= '0' && src[1] <= '7') // oct
-		{
-			src ++;
-			i++;
-			while(*src <= '7' && *src >= '0')
-			{
-				*result = (*result << 3) + *src - '0';
-				++i;
-			}
-			*result *= m;
-			return i;
-		}
-		return 1; // 十进制的单个‘0’
-	}
-	else if (*src >= '0' && *src <= '9')
-	{
-		while(*src >= '0' && *src <= '9')
-		{
-			*result = *result * 10 + *src++ - '0';
-			++i;
-		}
-		*result *= m;
-		return i;
-	}
-	return -1;
-}
-
-// 获取一个由end_ch终止的项，end_ch本身不含于其中。
-int get_term(char *dst, const char *src, const char end_ch)
-{
-	int i = 0;
-	while(src[i] != '\0' && src[i] != end_ch)
-	{
-		dst[i] = src[i];
-		++i;
-	}
-	dst[i] = '\0';
-	return i;
-}
-
-// 计算给定要求的项长度
-int count_term(const char *src, const char end_ch)
-{
-	int i = 0;
-	while(src[i] != '\0' && src[i] != end_ch)
-	{
-		++i;
-	}
-	return i;
-}
-
 int get_gprid(const char *name)
 {
 	for(int i = 0; i < (int)(sizeof(gpr_name)/sizeof(const char *)); ++i)
@@ -330,7 +247,7 @@ int parse_param(const char *_buf, const char *src, instr_t *_ins)
 		if(src[p] == '#' || src[p] == '&')
 		{
 			// get_term(buf, _buf + q, src[p + 1]);
-			int ans;
+			long long ans;
 			q += parse_int(&ans, _buf + q);
 			src[p] == '&' ? _ins->imm = ans >> 2 : _ins->imm = ans;
 			++p;
