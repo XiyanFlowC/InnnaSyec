@@ -536,7 +536,7 @@ LD
 21 25 rs
 16 20 rt
 0 15 #
-%ld $s, #($s)
+%ld $t, #($s)
 gpr[rt] = (long long)ld(gpr[rs] + (int)imm);@
 
 LH
