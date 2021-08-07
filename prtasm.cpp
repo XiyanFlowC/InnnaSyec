@@ -596,6 +596,7 @@ int mkasm(unsigned char *buf, char *asmb, unsigned long long now_vma)
                 goto mkasm_nparse;
             }
         }
+        if(lbl[0] >= '0' && lbl[0] <= '9') goto mkasm_nparse;
         return -4;
     }
     mkasm_nparse:
