@@ -555,7 +555,9 @@ int check()
 }
 
 // 判断：是否为有分支延迟槽之指令（基于助记符）
-// TODO: 更精细的判断！
+// 0 - not
+// 1 - j
+// 2 - b
 int is_lbinst(char *nm)
 {
     strupr(nm);
@@ -625,6 +627,10 @@ int mkasm(unsigned char *buf, char *asmb, unsigned long long now_vma)
                 if(is_delayslot)
                 {
                     *((unsigned int *)buf) = *((unsigned int *)buf - 1);
+                    auto tins = disasm(*((unsigned int *)buf - 1));
+                    if(is_lbinst((char*)insts_name[tins.opcode]) == 2)
+                        tins.imm -= 1, *((unsigned int *)buf) = asmble(tins);
+                        // puts("警告，延迟槽中可能有问题。");
                     *((unsigned int *)buf - 1) = asmble(tmp);
                 }
                 else
@@ -669,6 +675,10 @@ int mkasm(unsigned char *buf, char *asmb, unsigned long long now_vma)
                     if(is_delayslot)
                     {
                         *((unsigned int *)buf) = *((unsigned int *)buf - 1);
+                        auto tins = disasm(*((unsigned int *)buf - 1));
+                        if(is_lbinst((char*)insts_name[tins.opcode]) == 2)
+                            tins.imm -= 1, *((unsigned int *)buf) = asmble(tins);
+                            // puts("警告：延迟槽中可能有问题。");
                         *((unsigned int *)buf - 1) = asmble(ans);
                     }
                     else
