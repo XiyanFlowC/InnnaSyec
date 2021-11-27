@@ -64,3 +64,32 @@ g++ preprocessor.cpp -o preprocessor
 preprocessor test.txt test.pp.txt # 预处理test.txt
 prtasm -m a -i SLPS_256.04 -o test.elf -s test.pp.txt # 执行汇编
 ```
+
+## Script Syntax
+脚本语法很类似普通的汇编指令。但是需要注意，此工具非常朴素，不支持任何计算，因此类似“addi a0, (FooBar - 0x1000)”的指令无法处理。
+
+此外，为了应对在程序中间打补丁时，可能产生的越界问题，提供了指令.loc SET_ADDR,WARN_ADDR，这样，从这条指令开始产生的指令会从SET_ADDR开始填充，而一旦地址触及WARN_ADDR，此工具会给出警告。（可以通过开关 -r 将之视作致命错误）
+
+预计在未来加入预处理器的功能。
+
+注意一些看上去类似的文法实际上有着不同的含义。
+
+```
+; patch at codes point 1
+.loc 100fac,1010ff ; 在 100fac 开始写入，到达 1010ff 时警告
+f_00:
+move    a0, zero
+la      a1, str_00
+jal     0x6ff2f0
+li      a2, 2
+beq     zero, zero, f_00
+nop
+.align 8 ; 对齐到下一个 8 字节对齐位
+.galign 8 ; 从此开始的字符串末尾都以 8 字节对齐（填充 0 直至对齐）
+str_00:
+.asciiz "ERROR: Stuck!\n"
+
+.loc fff000 ; 在 fff000 开始写入
+jr      ra
+move    v0, zero
+```
