@@ -66,6 +66,8 @@ static void lopt_regopt(const char *name, char chname, unsigned char flg, int (*
         __lopt_mktbl();
     __reged_opt[opt_idx].callback = callback;
     __reged_opt[opt_idx].ch_opt = chname;
+    if(name != NULL) flg |= LOPT_FLG_STR_VLD;
+    if(chname != '\0') flg |= LOPT_FLG_CH_VLD;
     __reged_opt[opt_idx].flg = flg;
     __reged_opt[opt_idx].flg |= LOPT_FLG_OPT_VLD;
     strcpy(__reged_opt[opt_idx++].long_opt, name);

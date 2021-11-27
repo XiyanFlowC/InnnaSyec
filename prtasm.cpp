@@ -563,6 +563,7 @@ int is_lbinst(char *nm)
     strupr(nm);
     if(nm[0] == 'J' && nm[1] != 'R') return 1; // r for jr
     if(nm[0] == 'B' && nm[1] != 'R') return 2; // r for break
+    if(nm[0] == 'J' && nm[1] == 'R') return 3; // jr - not relate to the addr
     return 0;
 }
 
