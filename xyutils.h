@@ -18,9 +18,18 @@ inline char *str_first_not(const char *src, const char ch)
     return (char *)src;
 }
 
+inline char *str_trim_end(char *src)
+{
+	if(!*src) return NULL;
+	while(*src != '\0') ++src;
+	--src;
+	while(*src == '\t' || *src == ' ') --src;
+	*(++src) = '\0';
+}
+
 // 获取第一个指定的ch的字符位置
 // 同时过滤空白字符（' ', '\\n', '\\t'）
-inline char *str_first(const char *src, const char ch)
+inline char * str_first(const char *src, const char ch)
 {
     while (*src != '\0' && *src != ch)
         ++src;

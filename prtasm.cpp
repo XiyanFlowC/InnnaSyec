@@ -368,9 +368,9 @@ int check()
             tag_vma[tag_p] = now_loc + offset;
             if ((count = get_term(tag_nm[tag_p], str, ':')) >= 128)
                 FATAL(3001);
-            if (count != count_term(tag_nm[tag_p], ' '))
+            if (count != count_term(tag_nm[tag_p], ' ')) // 确保标签中没有空格
                 ERROR(3002);
-            if (count != count_term(tag_nm[tag_p++], '\t'))
+            if (count != count_term(tag_nm[tag_p++], '\t')) // 确保标签中没有制表符
                 ERROR(3003);
         }
 
@@ -571,17 +571,23 @@ static int is_delayslot = 0;
 
 int mkasm(unsigned char *buf, char *asmb, unsigned long long now_vma)
 {
+    str_trim_end(asmb);
     char mnemonic[64];
     sscanf(asmb, "%s", mnemonic);
     int type = is_lbinst(mnemonic);
     if(type)
     {
         if(is_delayslot) return -5;
+        if(type == 3)
+        {
+            is_delayslot = 2;
+            goto mkasm_nparse;
+        }
         char *lbl = str_last(asmb, ',');
         if(lbl == NULL) 
         {
-            lbl = str_first(asmb, ' ');
-            if(lbl == NULL) return -3;
+            if((lbl = str_first(asmb, ' ')) == NULL
+                && (lbl = str_first(asmb, '\t')) == NULL) return -3;
         }
         lbl = str_first_not(lbl + 1, '\r');
         if(lbl == NULL) return -3;
@@ -698,7 +704,8 @@ int mkasm(unsigned char *buf, char *asmb, unsigned long long now_vma)
     }
     else
     {
-        if(ret != (int)strlen(asmb)) return -1000;
+        if(ret != (int)strlen(asmb))
+            return -1000;
         *((unsigned int *)buf) = asmble(ans);
         if(is_delayslot) --is_delayslot;
         return 4;
