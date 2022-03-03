@@ -51,8 +51,8 @@ void warn(int code);
 // 获取并输出致命信息，并中止程序
 void fatal(int code);
 void info(int code);
-int check();
-int genasm(unsigned char *buffer);
+//int check();
+int genasm(unsigned char *buffer, bool check_only = false);
 
 int main(int argc, const char **argv)
 {
@@ -210,7 +210,7 @@ int main(int argc, const char **argv)
             fatal(2002);
         if (script == NULL)
             fatal(2003);
-        if (0 == check())
+        if (0 == genasm(buf, true))
             genasm(buf);
 
         if(!cerror)
@@ -293,266 +293,6 @@ int get_asm_len(const char *src)
 static unsigned long long tag_loc[LABEL_MAX_COUNT], tag_vma[LABEL_MAX_COUNT];
 static char tag_nm[LABEL_MAX_COUNT][128];
 static int tag_p = 0;
-
-int check()
-{
-    static char linebuf[4096];
-    unsigned long long now_loc = 0, galign = 0, warn_loc = ~0x0;
-    long long offset = 0;
-    int line = 1;
-    while (EOF != fscanf(script, "%[^\n]", linebuf)) // TODO: 重写所有和script相关部分以支持运行时预处理器（语法关联）
-    {
-        debug("line %d, %08X\n", line, now_loc);
-
-        int t = fgetc(script);
-        if('\n' != t && t != EOF) WARN(3910);
-
-        int flg = 0;
-        char *p = linebuf, *body = linebuf;
-
-        if (now_loc >= warn_loc)
-        {
-            if (stop_if_overline)
-                FATAL(3900);
-            else
-                WARN(3900);
-            warn_loc = ~0x0;
-        }
-
-        while (*p != '\0') // 处理注释及标签标记
-        {
-            if (flg)
-            {
-                if (*p == '\\')
-                {
-                    if (*++p == 'x')
-                    {
-                        p += 2;
-                    }
-                    ++p;
-                    continue;
-                }
-                if (*p == '"')
-                    flg = 0;
-                ++p;
-                continue;
-            }
-            if (*p == ':')
-            {
-                body = str_first_not(p + 1, ' '); // 如果紧随换行，body会是NULL
-                if(body == NULL) body = p + 1; // 所以如果标签后紧随换行，用这行救一下
-            }
-            if (*p == '"')
-            {
-                flg = 1;
-                ++p;
-                continue;
-            }
-            if (*p == '#' || *p == ';')
-            {
-                *p = '\0';
-                break;
-            }
-            ++p;
-        }
-        if (flg)
-            ERROR(3004);
-
-        if (body != linebuf) // 有标签，要处理
-        {
-            char *str = str_first_not(linebuf, '\r');
-            int count;
-            if (tag_p >= LABEL_MAX_COUNT - 1)
-                FATAL(3000);
-            tag_loc[tag_p] = now_loc;
-            tag_vma[tag_p] = now_loc + offset;
-            if ((count = get_term(tag_nm[tag_p], str, ':')) >= 128)
-                FATAL(3001);
-            if (count != count_term(tag_nm[tag_p], ' ')) // 确保标签中没有空格
-                ERROR(3002);
-            if (count != count_term(tag_nm[tag_p++], '\t')) // 确保标签中没有制表符
-                ERROR(3003);
-        }
-
-        // 常规指令字处理
-        if ((body = str_first_not(body, '\r')) == NULL)//空行
-        {
-            ++line;
-            continue;
-        }
-
-        else if (body[0] == '.') // 汇编器控制指令
-        {
-            char cmd[128];
-            if(get_term2(cmd, body + 1) == 0)
-            {
-                WARN(3107);
-            }
-            else if (0 == strcmp(cmd, "byte"))
-                now_loc += 1;
-            else if (0 == strcmp(cmd, "half"))
-                now_loc += 2;
-            else if (0 == strcmp(cmd, "word"))
-                now_loc += 4;
-            else if (0 == strcmp(cmd, "dword"))
-                now_loc += 8;
-            else if (0 == strcmp(cmd, "qword"))
-                now_loc += 16;
-            else if (0 == strcmp(cmd, "align"))
-            {
-                unsigned long long align = 0;
-                if (sscanf(body + 6, "%llu", &align) != 1)
-                    ERROR(3100);
-                align -= 1;
-                now_loc = (now_loc + align) & ~align;
-            }
-            else if (0 == strcmp(cmd, "ascii"))
-            {
-                char *sta = str_first(linebuf, '"');
-                if(sta == NULL)
-                    ERROR(3108);
-                else
-                    ++sta;
-                int leng = 0;
-                while (*sta != '\0') // 处理字符串
-                {
-                    if (*sta == '\\')
-                    {
-                        if (*++sta == 'x')
-                        {
-                            sta += 2;
-                        }
-                        ++sta;
-                        ++leng;
-                        continue;
-                    }
-                    if (*sta == '"')
-                        break;
-                    ++sta, ++leng;
-                    continue;
-                }
-                if (*sta == '\0')
-                    ERROR(3101);
-                now_loc += leng;
-                now_loc = (now_loc + galign) & ~galign;
-            }
-            else if (0 == strcmp(cmd, "asciiz"))
-            {
-                char *sta = str_first(linebuf, '"');
-                if(sta == NULL)
-                    ERROR(3108);
-                else
-                    ++sta;
-                int leng = 0;
-                while (*sta != '\0') // 处理字符串
-                {
-                    if (*sta == '\\')
-                    {
-                        if (*++sta == 'x')
-                        {
-                            sta += 2;
-                        }
-                        ++sta;
-                        ++leng;
-                        continue;
-                    }
-                    if (*sta == '"')
-                        break;
-                    ++sta, ++leng;
-                    continue;
-                }
-                if (*sta == '\0')
-                    ERROR(3101);
-                now_loc += leng + 1; // 末尾的填充零
-                now_loc = (now_loc + galign) & ~galign;
-            }
-            else if (0 == strcmp(cmd, "galign"))
-            {
-                if (sscanf(body + 7, "%lld", &galign) != 1)
-                    ERROR(3102);
-                if (galign % 2 != 0 && galign != 1)
-                    WARN(3103);
-                if (galign == 0)
-                    FATAL(3199);
-                galign -= 1;
-            }
-            else if (0 == strcmp(cmd, "offset"))
-            {
-                if (sscanf(body + 7, "%llX", &offset) != 1)
-                    ERROR(3104);
-            }
-            else if (0 == strcmp(cmd, "loc"))
-            {
-                unsigned long long tmp1, tmp2;
-                int rst = sscanf(body + 4, "%llX,%llX", &tmp1, &tmp2);
-                if (rst == 1)
-                {
-                    now_loc = tmp1;
-                    warn_loc = ~0x0;
-                }
-                else if (rst == 2)
-                {
-                    now_loc = tmp1;
-                    warn_loc = tmp2;
-                }
-                else
-                {
-                    ERROR(3105);
-                }
-            }
-            else if (0 == strcmp(cmd, "bloc"))
-            {
-                unsigned long long tmp1, tmp2;
-                if (sscanf(body + 5, "%llX,%llX", &tmp1, &tmp2) != 2)
-                {
-                    ERROR(3106);
-                }
-                else
-                {
-                    now_loc = tmp1;
-                    warn_loc = tmp1 + tmp2;
-                }
-            }
-            else if (0 == strcmp(cmd, "vma"))
-            {
-                unsigned long long tmp1, tmp2;
-                int rst = sscanf(body + 4, "%llX,%llX", &tmp1, &tmp2);
-                if (rst == 1)
-                {
-                    now_loc = tmp1 - offset;
-                    warn_loc = ~0x0;
-                }
-                else if (rst == 2)
-                {
-                    now_loc = tmp1 - offset;
-                    warn_loc = tmp2 - offset;
-                }
-                else
-                {
-                    ERROR(3108);
-                }
-            }
-            else
-            {
-                ERROR(3110);
-            }
-        }
-
-        else
-        {
-            int len = get_asm_len(body);
-            if(len == -1) ERROR(3200);
-            else now_loc += len;
-        }
-        debug("after line %d, %08X\n", line, now_loc);
-
-        linebuf[0] = '\0';// TODO: 重写所有和script相关部分以支持运行时预处理器（语法关联）
-        ++line;
-    }
-
-    rewind(script);// TODO: 重写所有和script相关部分以支持运行时预处理器（语法关联）
-    return 0;
-}
 
 // 判断：是否为有分支延迟槽之指令（基于助记符）
 // 0 - not
@@ -713,14 +453,18 @@ int mkasm(unsigned char *buf, char *asmb, unsigned long long now_vma)
     return -3;
 }
 
-int genasm(unsigned char *buffer)
+int genasm(unsigned char *buffer, bool check_only)
 {
     static char linebuf[4096];
     unsigned long long now_loc = 0, galign = 0, warn_loc = ~0x0;
     long long offset = 0;
-    int line = 1;
+    int line = 0;
+    static char logic_filename[2048];
     while (EOF != fscanf(script, "%[^\n]", linebuf))// TODO: 重写所有和script相关部分以支持运行时预处理器（语法关联）
     {
+        ++line;
+
+        debug("%d, %llX : %s\n", line, now_loc, linebuf);
         int t = fgetc(script);
         if('\n' != t && t != EOF) WARN(4910);
 
@@ -733,7 +477,7 @@ int genasm(unsigned char *buffer)
                 FATAL(4900);
             else
                 WARN(4900);
-            warn_loc = ~0x0;
+            warn_loc = ~0x0; // it do not need to alarm ever
         }
 
         while (*p != '\0') // 处理注释及标签标记
@@ -775,21 +519,27 @@ int genasm(unsigned char *buffer)
         if (flg)
             aerror(line, 3004, linebuf);
 
-        // // 标签处理。: 因为目前所有数字都是位于末尾且只有一个，姑且先这么瞎搞一下：
-        // for(int i = 0; i < tag_p; ++i)
-        // {
-        //     char *pos;
-        //     pos = strstr(body, tag_nm[i]);
-        //     if(pos != NULL)
-        //     {
-        //         sprintf(pos, "0x%llX", tag_vma[i]);
-        //     }
-        // }
+        if (check_only && body != linebuf) // 有标签，要处理
+        {
+            char *str = str_first_not(linebuf, '\r');
+            int count;
+            if (tag_p >= LABEL_MAX_COUNT - 1)
+                FATAL(3000);
+            tag_loc[tag_p] = now_loc;
+            tag_vma[tag_p] = now_loc + offset;
+            if ((count = get_term(tag_nm[tag_p], str, ':')) >= 128)
+                FATAL(3001);
+            if (count != count_term(tag_nm[tag_p], ' ')) // 确保标签中没有空格
+                ERROR(3002);
+            if (count != count_term(tag_nm[tag_p++], '\t')) // 确保标签中没有制表符
+                ERROR(3003);
+
+            debug("%16s: %llX\n", tag_nm[tag_p - 1], tag_vma[tag_p - 1]);
+        }
 
         // 常规指令字处理
         if ((body = str_first_not(body, '\r')) == NULL)//空行
         {
-            ++line;
             continue;
         }
 
@@ -815,6 +565,12 @@ int genasm(unsigned char *buffer)
             }
             else if (0 == strcmp(cmd, "byte"))
             {
+                if(check_only) 
+                {
+                    now_loc += 1;
+                    continue;
+                }
+
                 if(0 >= parse_int(&tmp.i64, body + 5))
                     ERROR(4130);
                 if(tmp.u64 >= 0xff) WARN(4109);
@@ -823,6 +579,13 @@ int genasm(unsigned char *buffer)
             }
             else if (0 == strcmp(cmd, "half"))
             {
+                if(check_only) 
+                {
+                    now_loc += 2;
+                    continue;
+                }
+
+                if(check_only) continue;
                 if(0 >= parse_int(&tmp.i64, body + 5))
                     ERROR(4130);
                 if(tmp.u64 >= 0xffff) WARN(4109);
@@ -831,6 +594,13 @@ int genasm(unsigned char *buffer)
             }
             else if (0 == strcmp(cmd, "word"))
             {
+                if(check_only) 
+                {
+                    now_loc += 4;
+                    continue;
+                }
+
+                if(check_only) continue;
                 int ret = parse_int(&tmp.i64, body + 5);
                 if(0 >= ret)
                 {
@@ -859,6 +629,13 @@ int genasm(unsigned char *buffer)
             }
             else if (0 == strcmp(cmd, "dword"))
             {
+                if(check_only) 
+                {
+                    now_loc += 8;
+                    continue;
+                }
+
+                if(check_only) continue;
                 if(0 >= parse_int(&tmp.i64, body + 5))
                     ERROR(4130);
                 *((unsigned long long *)(buffer + now_loc)) = tmp.u64;
@@ -889,6 +666,13 @@ int genasm(unsigned char *buffer)
                     {
                         if (*++sta == 'x')
                         {
+                            if(check_only)
+                            {
+                                sta += 2;
+                                now_loc += 1;
+                                continue;
+                            }
+
                             char a = *++sta;
                             char b = *++sta;
                             if(a >= 'a' && a <= 'f') a = a - 'a' + 'A';
@@ -897,18 +681,42 @@ int genasm(unsigned char *buffer)
                         }
                         if(*sta == 'n')
                         {
+                            if(check_only)
+                            {
+                                now_loc += 1;
+                                continue;
+                            }
+
                             *(buffer + now_loc++) = '\n';
                         }
                         if(*sta == '\\')
                         {
+                            if(check_only)
+                            {
+                                now_loc += 1;
+                                continue;
+                            }
+
                             *(buffer + now_loc++) = '\\';
                         }
                         if(*sta == 'r')
                         {
+                            if(check_only)
+                            {
+                                now_loc += 1;
+                                continue;
+                            }
+
                             *(buffer + now_loc++) = '\r';
                         }
                         if(*sta == '0')
                         {
+                            if(check_only)
+                            {
+                                now_loc += 1;
+                                continue;
+                            }
+
                             *(buffer + now_loc++) = '\0';
                         }
                         ++sta;
@@ -916,7 +724,11 @@ int genasm(unsigned char *buffer)
                     }
                     if (*sta == '"')
                         break;
-                    *(buffer + now_loc++) = *sta++;
+                    
+                    if(check_only)
+                        now_loc += 1;
+                    else
+                        *(buffer + now_loc++) = *sta++;
                     continue;
                 }
                 if (*sta == '\0')
@@ -936,6 +748,13 @@ int genasm(unsigned char *buffer)
                     {
                         if (*++sta == 'x')
                         {
+                            if(check_only)
+                            {
+                                sta += 2;
+                                now_loc += 1;
+                                continue;
+                            }
+
                             char a = *++sta;
                             char b = *++sta;
                             if(a >= 'a' && a <= 'f') a = a - 'a' + 'A';
@@ -944,18 +763,42 @@ int genasm(unsigned char *buffer)
                         }
                         if(*sta == 'n')
                         {
+                            if(check_only)
+                            {
+                                now_loc += 1;
+                                continue;
+                            }
+
                             *(buffer + now_loc++) = '\n';
                         }
                         if(*sta == '\\')
                         {
+                            if(check_only)
+                            {
+                                now_loc += 1;
+                                continue;
+                            }
+
                             *(buffer + now_loc++) = '\\';
                         }
                         if(*sta == 'r')
                         {
+                            if(check_only)
+                            {
+                                now_loc += 1;
+                                continue;
+                            }
+
                             *(buffer + now_loc++) = '\r';
                         }
                         if(*sta == '0')
                         {
+                            if(check_only)
+                            {
+                                now_loc += 1;
+                                continue;
+                            }
+
                             *(buffer + now_loc++) = '\0';
                         }
                         ++sta;
@@ -963,12 +806,25 @@ int genasm(unsigned char *buffer)
                     }
                     if (*sta == '"')
                         break;
-                    *(buffer + now_loc++) = *sta++;
+
+                    if (check_only)
+                    {
+                        now_loc += 1;
+                        sta += 1;
+                    }
+                    else
+                        *(buffer + now_loc++) = *sta++;
                     continue;
                 }
                 if (*sta == '\0')
                     aerror(line, 4101, linebuf);
-                *(buffer + now_loc++) = '\0';
+                
+                if (check_only)
+                {
+                    now_loc += 1;
+                }
+                else
+                    *(buffer + now_loc++) = '\0';
                 now_loc = (now_loc + galign) & ~galign;
             }
             else if (0 == strcmp(cmd, "galign"))
@@ -1052,6 +908,18 @@ int genasm(unsigned char *buffer)
                     aerror(line, 4108, linebuf);
                 }
             }
+            else if (0 == strcmp(cmd, "file"))
+            {
+                int rst = sscanf(body + 6, "%s %d", scriptnm, &line);
+                if (rst == 1)
+                {
+                    line = 0;
+                }
+                else if (rst != 2)
+                {
+                    aerror(line, 4111, linebuf);
+                }
+            }
             else
             {
                 aerror(line, 4110, linebuf);
@@ -1060,23 +928,30 @@ int genasm(unsigned char *buffer)
 
         else
         {
-            int ret = mkasm(buffer + now_loc, body, now_loc + offset);
-            if(ret == -1) aerror(line, 8000, linebuf);
-            else if(ret == -2) aerror(line, 8001, linebuf);
-            else if(ret == -3) aerror(line, 8002, linebuf);
-            else if(ret == -4) aerror(line, 4201, linebuf);
-            else if(ret == -5) aerror(line, 4203, linebuf);
-            else if(ret == -1000) aerror(line, 4200, linebuf);
-            else now_loc += ret;
-        }
+            if (check_only)
+            {
+                int len = get_asm_len(body);
+                if(len == -1) aerror(line, 3200, linebuf);
+                else now_loc += len;
+            }
 
-        linebuf[0] = '\0';// TODO: 重写所有和script相关部分以支持运行时预处理器（语法关联）
-        ++line;
+            else
+            {
+                int ret = mkasm(buffer + now_loc, body, now_loc + offset);
+                if(ret == -1) aerror(line, 8000, linebuf);
+                else if(ret == -2) aerror(line, 8001, linebuf);
+                else if(ret == -3) aerror(line, 8002, linebuf);
+                else if(ret == -4) aerror(line, 4201, linebuf);
+                else if(ret == -5) aerror(line, 4203, linebuf);
+                else if(ret == -1000) aerror(line, 4200, linebuf);
+                else now_loc += ret;
+            }
+        }
     }
     if(is_delayslot)
         awarn(line, 4121, linebuf);
 
-    rewind(script);// TODO: 重写所有和script相关部分以支持运行时预处理器（语法关联）
+    rewind(script);
     return 0;
 }
 
@@ -1241,6 +1116,7 @@ static struct err_t
     {4107, "二次解析时发生异常。空汇编器指令。"},
     {4108, "二次解析时发生异常。虚拟地址定义语句参数不正确。期待1～2个16进制整数。"},
     {4109, "二次解析时发现异常。定义的数据大小超出定义空间极限。"},
+    {4111, "解析时失败。.file 指令的参数数目不符合预期。"},
     {4110, "二次解析时发生异常。汇编器指令解析失败。不是有效的汇编器控制指令。"},
     {4120, "二次解析时发现异常。改变处理位置时仍在等待解析延迟槽指令。检查最后的跳转指令延迟槽定义。"},
     {4121, "二次解析时发现异常。处理结束时仍在等待解析延迟槽指令。检查最后的跳转指令延迟槽定义。"},
