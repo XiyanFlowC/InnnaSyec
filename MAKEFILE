@@ -1,17 +1,11 @@
-r5900.o: r5900.cpp mipsincs
-	g++ r5900.cpp -c -o r5900.o -W
-
-simpgen: simpgen.cpp
-	g++ simpgen.cpp -o simpgen
-
 prtasm.o: prtasm.cpp
-	g++ prtasm.cpp -c -o prtasm.o -W
+	g++ prtasm.cpp -c -o prtasm.o -Wall
 
 prtasm: r5900.o prtasm.o
-	g++ prtasm.o r5900.o -o prtasm
+	g++ prtasm.o ./inscodec/codec.o ./inscodec/disas.o -o prtasm
 
 preprocessor: preprocessor.cpp
-	g++ preprocessor.cpp -o preprocessor -W
+	g++ preprocessor.cpp -o preprocessor -Wall
 
 all: prtasm preprocessor
 
