@@ -293,6 +293,10 @@ int get_asm_len(const char *src)
     {
         return 8;
     }
+    else if(0 == strcmp(mnemonic, "MOVE"))
+    {
+        return 4;
+    }
     else return -1;
 }
 
@@ -452,6 +456,16 @@ int mkasm(unsigned char *buf, char *asmb, unsigned long long now_vma)
                 }
             }
             return -4;
+        }
+        else if (strcmp(mnemonic, "MOVE") == 0)
+        {
+            char *para = str_first_not(asmb + 4, '\r');
+            if (parse_param(para, "$rd, $rs", &ans) < 0) return -1;
+            ans.opcode = ADDU;
+            ans.rt = 0; // zero
+            *((unsigned int *)buf) = EncodeInstruction(ans);
+            if(is_delayslot) --is_delayslot;
+            return 4;
         }
     }
     else
