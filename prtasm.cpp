@@ -1,8 +1,10 @@
-#include "r5900.hpp"
+//#include "r5900.hpp"
 #include "liteopt.h"
-#include "xyutils.h"
+#include "inscodec/xyutils.h"
 #include <errno.h>
 #include <string.h>
+#include "inscodec/disas.h"
+#include "inscodec/ins_def.h"
 // #include <string>
 // #include <stack>
 // #include <vector>
@@ -23,6 +25,7 @@ static int mode = 0;
 // #define MODE_IDISASM 3
 // #define MODE_CASM    4
 // #define MODE_CDISASM 5
+#define MODE_EXPORT 6
 
 // 反汇编时，不可认识的代码的输出方式（0.byte, 1.half, 2.word）
 static int dmode = 2;
@@ -56,6 +59,8 @@ int genasm(unsigned char *buffer, bool check_only = false);
 
 int main(int argc, const char **argv)
 {
+    PrepareOpcodeBuffer();
+    
     lopt_regopt("stop-if-out-of-range", 'r', LOPT_FLG_CH_VLD | LOPT_FLG_OPT_VLD | LOPT_FLG_STR_VLD,
                 [](const char *ans) -> int
                 {
@@ -171,8 +176,8 @@ int main(int argc, const char **argv)
         for (unsigned long long i = dasm_sta; i < dasm_end; i += 4)
         {
             unsigned int cmd = *(unsigned int *)(buf + i);
-            instr_t result = disasm(cmd);
-            if (result.opcode == INVALID)
+            instr_t result = DecodeInstruction(cmd);
+            if (result.opcode == -1)
             {
                 if (do_invalid)
                     fputs("INVALID\n", output);
@@ -197,7 +202,8 @@ int main(int argc, const char **argv)
             }
             else
             {
-                printdis(strbuf, result);
+                //printdis(strbuf, result);
+                disas(result, i, strbuf);
                 fprintf(output, "%s\n", strbuf);
             }
         }
@@ -268,13 +274,19 @@ int get_asm_len(const char *src)
     char mnemonic[128];
     src = str_first_not(src, '\r');
     int eles = sscanf(src, "%s", mnemonic);
-    if(inst_id_bynm(mnemonic) != -1) return 4;
+
+    if (eles == 0) return -1;
+
+    for(int i = 0; i < OPTION_COUNT; ++i) {
+        if (strcmp(instructions[i].name, mnemonic) == 0) return 4;
+    }
+
     if(0 == strcmp(mnemonic, "LI"))
     {
         char *para = str_first_not(src + 2, '\r');
         instr_t tmp;
-        if(parse_param(para, "$t, #", &tmp) < 0) return -1;
-        if(tmp.imm > 0x7fff || tmp.imm < -0x8000) return 8;
+        if(parse_param(para, "$rt, #im", &tmp) < 0) return -1;
+        if(tmp.imm > 0x7fff || (*(long long*)&tmp.imm) < -0x8000) return 8;
         return 4;
     }
     else if(0 == strcmp(mnemonic, "LA"))
@@ -351,7 +363,7 @@ int mkasm(unsigned char *buf, char *asmb, unsigned long long now_vma)
     mkasm_nparse:
 
     instr_t ans;
-    int ret = parse_asm(asmb, &ans);
+    int ret = as(asmb, now_vma, &ans);
     if(ret < -1) return ret;
     if(ret == -1) // 非真指令的处理（伪指令判别）
     {
@@ -364,7 +376,7 @@ int mkasm(unsigned char *buf, char *asmb, unsigned long long now_vma)
         {
             char *para = str_first_not(asmb + 2, '\r');
             instr_t tmp;
-            if(parse_param(para, "$t, #", &tmp) < 0) return -1;
+            if(parse_param(para, "$rt, #im", &tmp) < 0) return -1;
             if(tmp.imm > 0x7fff)
             {
                 int low = tmp.imm & 0xffff;
@@ -374,23 +386,23 @@ int mkasm(unsigned char *buf, char *asmb, unsigned long long now_vma)
                 if(is_delayslot)
                 {
                     *((unsigned int *)buf) = *((unsigned int *)buf - 1);
-                    auto tins = disasm(*((unsigned int *)buf - 1));
-                    if(is_lbinst((char*)insts_name[tins.opcode]) == 2)
-                        tins.imm -= 1, *((unsigned int *)buf) = asmble(tins);
+                    auto tins = DecodeInstruction(*((unsigned int *)buf - 1));
+                    if(is_lbinst((char*)instructions[tins.opcode].name) == 2)
+                        tins.imm -= 1, *((unsigned int *)buf) = EncodeInstruction(tins);
                         // puts("警告，延迟槽中可能有问题。");
-                    *((unsigned int *)buf - 1) = asmble(tmp);
+                    *((unsigned int *)buf - 1) = EncodeInstruction(tmp);
                 }
                 else
-                    *((unsigned int *)buf) = asmble(tmp);
+                    *((unsigned int *)buf) = EncodeInstruction(tmp);
                 buf += 4;
                 tmp.opcode = ADDIU;
                 tmp.rs = tmp.rt;
                 tmp.imm = low > 0x7fff ? -(0x10000 - low) : low;
-                *((unsigned int *)buf) = asmble(tmp);
+                *((unsigned int *)buf) = EncodeInstruction(tmp);
                 if(is_delayslot) --is_delayslot;
                 return 8;
             }
-            if(tmp.imm < -0x8000)
+            if((*(long long*)&tmp.imm) < -0x8000)
             {
                 error(9501);
                 int low = tmp.imm & 0xffff;
@@ -398,8 +410,8 @@ int mkasm(unsigned char *buf, char *asmb, unsigned long long now_vma)
                 return 8;
             }
             tmp.opcode = ADDIU;
-            tmp.rs = zero;
-            *((unsigned int *)buf) = asmble(tmp);
+            tmp.rs = 0;
+            *((unsigned int *)buf) = EncodeInstruction(tmp);
             if(is_delayslot) --is_delayslot;
             return 4;
         }
@@ -414,7 +426,7 @@ int mkasm(unsigned char *buf, char *asmb, unsigned long long now_vma)
                 if(0 == strcmp(tag_nm[i], lbl))
                 {
                     sprintf(lbl, "%llu", tag_vma[i]);
-                    parse_param(str_first_not(asmb + 2, '\r'), "$t, #", &ans);
+                    parse_param(str_first_not(asmb + 2, '\r'), "$rt, #im", &ans);
                     int low = ans.imm & 0xffff;
                     ans.opcode = LUI;
                     ans.imm >>= 16;
@@ -422,19 +434,19 @@ int mkasm(unsigned char *buf, char *asmb, unsigned long long now_vma)
                     if(is_delayslot)
                     {
                         *((unsigned int *)buf) = *((unsigned int *)buf - 1);
-                        auto tins = disasm(*((unsigned int *)buf - 1));
-                        if(is_lbinst((char*)insts_name[tins.opcode]) == 2)
-                            tins.imm -= 1, *((unsigned int *)buf) = asmble(tins);
+                        auto tins = DecodeInstruction(*((unsigned int *)buf - 1));
+                        if(is_lbinst((char*)instructions[tins.opcode].name) == 2)
+                            tins.imm -= 1, *((unsigned int *)buf) = EncodeInstruction(tins);
                             // puts("警告：延迟槽中可能有问题。");
-                        *((unsigned int *)buf - 1) = asmble(ans);
+                        *((unsigned int *)buf - 1) = EncodeInstruction(ans);
                     }
                     else
-                        *((unsigned int *)buf) = asmble(ans);
+                        *((unsigned int *)buf) = EncodeInstruction(ans);
                     buf += 4;
                     ans.opcode = ADDIU;
                     ans.rs = ans.rt;
                     ans.imm = low > 0x7fff ? -(0x10000 - low) : low;
-                    *((unsigned int *)buf) = asmble(ans);
+                    *((unsigned int *)buf) = EncodeInstruction(ans);
                     if(is_delayslot) --is_delayslot;
                     return 8;
                 }
@@ -446,7 +458,7 @@ int mkasm(unsigned char *buf, char *asmb, unsigned long long now_vma)
     {
         if(ret != (int)strlen(asmb))
             return -1000;
-        *((unsigned int *)buf) = asmble(ans);
+        *((unsigned int *)buf) = EncodeInstruction(ans);
         if(is_delayslot) --is_delayslot;
         return 4;
     }
@@ -460,7 +472,7 @@ int genasm(unsigned char *buffer, bool check_only)
     long long offset = 0;
     int line = 0;
     static char logic_filename[2048];
-    while (EOF != fscanf(script, "%[^\n]", linebuf))// TODO: 重写所有和script相关部分以支持运行时预处理器（语法关联）
+    while (EOF != fscanf(script, "%[^\n]", linebuf))
     {
         ++line;
 
@@ -1032,8 +1044,8 @@ int handle_D(const char *hex)
     char buf[128];
     unsigned long data;
     sscanf(hex, "%lX", &data);
-    instr_t inst = disasm(data);
-    printdis(buf, inst);
+    instr_t inst = DecodeInstruction(data);
+    disas(inst, 0, buf);
     puts(buf);
     return 0;
 }
@@ -1043,7 +1055,7 @@ int handle_A(const char *asmb)
     if (asmb == NULL)
         fatal(1901);
     instr_t ans;
-    int ret = parse_asm(asmb, &ans);
+    int ret = as(asmb, 0, &ans);
     if (ret == -1)
     {
         error(8000);
@@ -1059,7 +1071,7 @@ int handle_A(const char *asmb)
         error(8002);
         return 8002;
     }
-    printf("%08X\n", asmble(ans));
+    printf("%08X\n", EncodeInstruction(ans));
     return 0;
 }
 

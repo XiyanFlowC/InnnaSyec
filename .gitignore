@@ -1,7 +1,7 @@
-*.inc
 *.exe
 *.obj
 .vscode/*.*
 *.o
 simpgen
 prtasm
+sqlite3/*
