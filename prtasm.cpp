@@ -352,17 +352,20 @@ int mkasm(unsigned char *buf, char *asmb, unsigned long long now_vma)
         {
             if(0 == strcmp(tag_nm[i], lbl))
             {
-                if(type == 1)
+                // if(type == 1)
                     sprintf(lbl, "%llu", tag_vma[i]);
-                else
-                    sprintf(lbl, "%lld", (long long)tag_vma[i] - (long long)now_vma - 1);
+                // else
+                //     sprintf(lbl, "%lld", (long long)tag_vma[i] - (long long)now_vma - 1);
                 is_delayslot = 2; // 每次返回前减一，由于跳转位于延迟槽的异常判断位于之前，这里可以设置
                 // 注解：即：本次返回减少1变为1，下一条位于延迟槽的指令方能正确判断。
                 // 注解：下一条延迟槽指令返回时减少1变为0，即恢复正常状态。
                 goto mkasm_nparse;
             }
         }
-        if(lbl[0] >= '0' && lbl[0] <= '9') goto mkasm_nparse;
+        if(lbl[0] >= '0' && lbl[0] <= '9') {
+            is_delayslot = 2;
+            goto mkasm_nparse;
+        }
         return -4;
     }
     mkasm_nparse:
@@ -475,7 +478,7 @@ int mkasm(unsigned char *buf, char *asmb, unsigned long long now_vma)
         if(ret == -19)
             return -1000;
         if (ret) return -3;
-        
+
         *((unsigned int *)buf) = EncodeInstruction(ans);
         if(is_delayslot) --is_delayslot;
         return 4;
@@ -490,13 +493,17 @@ int genasm(unsigned char *buffer, bool check_only)
     long long offset = 0;
     int line = 0;
     static char logic_filename[2048];
-    while (EOF != fscanf(script, "%[^\n]", linebuf))
+    int fsret = 0;
+    while (EOF != (fsret = fscanf(script, "%[^\n]", linebuf)))
     {
-        ++line;
-
-        debug("%d, %llX : %s\n", line, now_loc, linebuf);
         int t = fgetc(script);
         if('\n' != t && t != EOF) WARN(4910);
+
+        ++line;
+
+        if (fsret == 0) continue; // 空行
+
+        debug("%d, %llX : %s\n", line, now_loc, linebuf);
 
         int flg = 0;
         char *p = linebuf, *body = linebuf;
@@ -1158,7 +1165,7 @@ static struct err_t
     {4201, "二次解析时发现异常。所指定的标签不存在。"},
     {4203, "二次解析时发现异常。分支延迟槽中的跳转指令。"},
     {4900, "二次解析时发生异常。容纳块溢出。"},
-    {4910, "二次解析时发现异常。换行符未能取得CR。检查文件格式或操作系统。"},
+    {4910, "二次解析时发现异常。换行符未能取得LF。检查文件格式或操作系统。"},
     {8000, "无效汇编指令。"},
     {8001, "未知寄存器名。"},
     {8002, "命令语法不正确。"},
