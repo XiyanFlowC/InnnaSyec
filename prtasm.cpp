@@ -1221,7 +1221,7 @@ void info(int code)
 
 int show_help(const char *stub)
 {
-    puts("Partically assembler for MIPS R5900.\n    Coded by Xiyan_shan");
+    puts("Partially assembler for MIPS R5900.\n    Coded by Xiyan_shan");
     puts("部分汇编补丁应用器，RX79专版。\n    编写者：单希研");
     puts("用法 Usage: prtasm (-m [a/d]) -i [input.bin] -o [output.bin] (-s [script.txt] (Options))");
     puts("选项 Options: ");
