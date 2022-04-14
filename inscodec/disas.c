@@ -136,8 +136,23 @@ int disas(struct instr_t instr, unsigned int offset, char *buffer) {
     return 4;
 }
 
+/**
+ * @brief Parse the def and fill the instruction.
+ * 
+ * @param para The parameters string.
+ * @param def The definition of the parameter.
+ * @param result The assembled instruction.
+ * @return int 0 if success, -18; -11 if para is not given but expected, -16 if para is
+ * given but not expected, -12; -13; -14 if integer syntax is incorrect, -15 if an
+ * unexpected signed number is found, -19 if para is more than expected.
+ */
 int parse_param(const char *para, const char *def, struct instr_t *result) {
     char buffer[1024];
+
+    if(para == NULL) {
+        if(def[0] == '_') return 0;
+        else return -18;
+    }
 
     if(*para == '\0' && def[0] != '_') {
         return -11;
@@ -219,9 +234,23 @@ int parse_param(const char *para, const char *def, struct instr_t *result) {
 
         wh_end:;
     }
+
+    if(NULL != str_first_not(para, '\r')) return -19; // the line still something remain
+
     return 0;
 }
 
+/**
+ * @brief Assemble a asm command.
+ * 
+ * @param str The asm language
+ * @param offset The offset of the instruction (vma)
+ * @param result The result instruction
+ * @return int 0 if success, negative specified the error:
+ * -10: no mnemonic found; 
+ * -17: invalid mnemonic; 
+ * others: see parse_para()
+ */
 int as(const char *str, unsigned int offset, struct instr_t *result) {
     char buffer[128]; // may overflow, need to improve in the future.
     const char *next = get_next_word(str, buffer);
