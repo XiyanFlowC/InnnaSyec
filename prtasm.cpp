@@ -274,6 +274,7 @@ int get_asm_len(const char *src)
     char mnemonic[128];
     src = str_first_not(src, '\r');
     int eles = sscanf(src, "%s", mnemonic);
+    strupr(mnemonic);
 
     if (eles == 0) return -1;
 
@@ -368,8 +369,8 @@ int mkasm(unsigned char *buf, char *asmb, unsigned long long now_vma)
 
     instr_t ans;
     int ret = as(asmb, now_vma, &ans);
-    if(ret < -1) return ret;
-    if(ret == -1) // 非真指令的处理（伪指令判别）
+    // if(ret < -1) return ret;
+    if(ret == -17) // 非真指令的处理（伪指令判别）
     {
         char mnemonic[128];
         asmb = str_first_not(asmb, '\r');
@@ -470,8 +471,11 @@ int mkasm(unsigned char *buf, char *asmb, unsigned long long now_vma)
     }
     else
     {
-        if(ret != (int)strlen(asmb))
+        // if (ret) return ret;
+        if(ret == -19)
             return -1000;
+        if (ret) return -3;
+        
         *((unsigned int *)buf) = EncodeInstruction(ans);
         if(is_delayslot) --is_delayslot;
         return 4;
