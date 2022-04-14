@@ -38,7 +38,7 @@ static int dmode = 2;
 static unsigned long long dasm_sta = 0x0, dasm_end = 0xffffffffffffffff;
 static FILE *input, *output, *script; // TODO: include 支持，script相关全部重写
 static char *scriptnm, *outputnm;
-static bool do_invalid = false /*, do_purge = true*/, stop_if_overline = false, stop_firsterr = false;
+static bool do_invalid = false /*, do_purge = true*/, stop_if_overline = false, stop_firsterr = false, move_only_word = false;
 int cerror = 0, cwarn = 0;
 
 int handle_i(const char *filename);
@@ -65,6 +65,12 @@ int main(int argc, const char **argv)
                 [](const char *ans) -> int
                 {
                     stop_if_overline = true;
+                    return 0;
+                });
+    lopt_regopt("move-only-word", '\0', LOPT_FLG_OPT_VLD | LOPT_FLG_STR_VLD,
+                [](const char *ans) -> int
+                {
+                    move_only_word = true;
                     return 0;
                 });
     lopt_regopt("stop-at-first-error", 'e', LOPT_FLG_CH_VLD | LOPT_FLG_OPT_VLD | LOPT_FLG_STR_VLD,
@@ -298,6 +304,14 @@ int get_asm_len(const char *src)
     {
         return 4;
     }
+    else if(0 == strcmp(mnemonic, "DMOVE"))
+    {
+        return 4;
+    }
+    else if(0 == strcmp(mnemonic, "B"))
+    {
+        return 4;
+    }
     else return -1;
 }
 
@@ -465,8 +479,27 @@ int mkasm(unsigned char *buf, char *asmb, unsigned long long now_vma)
         {
             char *para = str_first_not(asmb + 4, '\r');
             if (parse_param(para, "$rd, $rs", &ans) < 0) return -1;
-            ans.opcode = ADDU;
+            ans.opcode = move_only_word ? ADDU : DADDU;
             ans.rt = 0; // zero
+            *((unsigned int *)buf) = EncodeInstruction(ans);
+            if(is_delayslot) --is_delayslot;
+            return 4;
+        }
+        else if (strcmp(mnemonic, "DMOVE") == 0)
+        {
+            char *para = str_first_not(asmb + 4, '\r');
+            if (parse_param(para, "$rd, $rs", &ans) < 0) return -1;
+            ans.opcode = DADDU;
+            ans.rt = 0; // zero
+            *((unsigned int *)buf) = EncodeInstruction(ans);
+            if(is_delayslot) --is_delayslot;
+            return 4;
+        }
+        else if (strcmp(mnemonic, "B") == 0)
+        {
+            if (parse_param(str_first_not(asmb + 1, '\r'), "&im", &ans) < 0) return -1;
+            ans.opcode = BEQ;
+            ans.rs = ans.rt = 0; // zero (beq zero, zero, &im)
             *((unsigned int *)buf) = EncodeInstruction(ans);
             if(is_delayslot) --is_delayslot;
             return 4;
@@ -1236,18 +1269,19 @@ int show_help(const char *stub)
     puts("部分汇编补丁应用器，RX79专版。\n    编写者：单希研");
     puts("用法 Usage: prtasm (-m [a/d]) -i [input.bin] -o [output.bin] (-s [script.txt] (Options))");
     puts("选项 Options: ");
-    puts("-A [asm code]   [测试]立即转换汇编代码到十六进制数据。");
-    puts("-D [hex code]   [测试]立即反汇编一个十六进制数。");
-    puts("-i [input.bin]  指定输入文件。");
-    puts("-o [output.bin] 指定输出文件。");
-    puts("-s [script.txt] 指定脚本文件。");
-    puts("-l [range]      指定反汇编限定地址(格式：xxx:xxx，16 进制)。（仅当模式为反汇编时可用）");
-    puts("-m [a/d]        指定为汇编或反汇编模式。（反汇编时，选项 -s 被忽略。）");
-    puts("-d [b/h/w]      将无法处理的指令值以.byte/.half/.word表示。（默认为.word）");
-    puts("-I              [未实现]指定为交互模式(忽略“-s”选项)。");
-    puts("-n              将无法解析的指令值输出为INVALID而非d*。");
-    puts("-r              当越界（如果有指定）时，停止汇编操作。");
-    puts("-e              当第一个错误发生时，停止运行。");
+    puts("-A [asm code]    [测试]立即转换汇编代码到十六进制数据。");
+    puts("-D [hex code]    [测试]立即反汇编一个十六进制数。");
+    puts("-i [input.bin]   指定输入文件。");
+    puts("-o [output.bin]  指定输出文件。");
+    puts("-s [script.txt]  指定脚本文件。");
+    puts("-l [range]       指定反汇编限定地址(格式：xxx:xxx，16 进制)。（仅当模式为反汇编时可用）");
+    puts("-m [a/d]         指定为汇编或反汇编模式。（反汇编时，选项 -s 被忽略。）");
+    puts("-d [b/h/w]       将无法处理的指令值以.byte/.half/.word表示。（默认为.word）");
+    //puts("-I               [未实现]指定为交互模式(忽略“-s”选项)。");
+    puts("-n               将无法解析的指令值输出为INVALID而非d*。");
+    puts("-r               当越界（如果有指定）时，停止汇编操作。");
+    puts("-e               当第一个错误发生时，停止运行。");
+    puts("--move-only-word move伪指令只移动低32位寄存器（生成ADDU而非DADDU）");
     // puts("--no-purge      指定不要复制输入文件到输出文件。");
     puts("例: \n\
     prtasm -i test.elf -o mod.elf -s mod.mips\n\
