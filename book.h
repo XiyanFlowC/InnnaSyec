@@ -8,6 +8,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <sqlite3.h>
+#include "fragcov.h"
 
 enum ref_dir_enum {
     REF_DIR_UP,
@@ -135,6 +136,10 @@ struct book {
     int struct_max;
     struct bin_struct *structs;
     unsigned int entry_point;
+
+    /*temporary data, introduced by mistake, remove them in the future!*/
+    struct fragbook* fbook;
+    /*do not save these data!*/
 };
 
 /**
@@ -149,12 +154,133 @@ struct book {
 struct book *book_init (const char *book_name);
 
 /**
+ * @brief Open a book.
+ * 
+ * @param book_name The name of the book.
+ * @return struct book* The open book. NULL if failed.
+ */
+struct book *book_open (const char *book_name);
+
+/**
+ * @brief Save all changes to the book and close the book.
+ * 
+ * @param book The book need to close.
+ * @return int 0 if success.
+ */
+int book_close (struct book* book);
+
+/**
+ * @brief Load a struct descripter file for a book.
+ * 
+ * @param book The recv book.
+ * @param filename The struct descripter file.
+ * @return int 0 if success.
+ */
+int book_ldstruct(struct book* book, const char *filename);
+
+/**
+ * @brief Export structs by loaded descripter. Create/Refill data tables in the meantime.
+ * 
+ * @param book The mod book.
+ * @param buffer The loaded elf buffer.
+ * @return int 0 if success.
+ */
+int book_exstruct(struct book* book, unsigned char *buffer);
+
+/**
+ * @brief Import structs by loaded descripter and data tables.
+ * 
+ * @param book The guide book.
+ * @param buffer The loaded elf buffer.
+ * @return int 0 if success.
+ */
+int book_imstruct(struct book* book, unsigned char *buffer);
+
+/**
+ * @brief Execute script file on book.
+ * 
+ * @param filename The script filename.
+ * @return int 0 if success.
+ */
+int book_exec(const char *filename);
+
+/**
+ * @brief Set a new string encoder for a book.
+ * 
+ * @param book The book.
+ * @param callback a function pointer point to a function that recv 2 params. The utf8_str
+ * is the string that need to be encoded, and the buffer is the target that need to be write, this
+ * function should return a int which is the byte this function written to the buffer. -1 should
+ * be returned if utf8_str is impossible to encode.
+ */
+void book_strenc_set(struct book* book, int (*callback)(const char *utf8_str, unsigned char *buffer));
+
+/**
+ * @brief Set a new string decoder for a book.
+ * 
+ * @param book The book.
+ * @param callback a function pointer point to a funciton that recv 2 params. The utf8_str
+ * is a pointer to the char* which need to point to a NEW malloc() assigned memory which contains
+ * the decoded utf8 string, the raw_str is the pointer point to the raw string. And, it should return
+ * the length it handled to raw_str. -1 should be returned if the raw_str is unrecognizable.
+ */
+void book_strdec_set(struct book* book, int *(*callback)(unsigned char *raw_str, char **utf8_str));
+
+/**
  * @brief Add a function's head location to the book for futher check.
  * 
  * @param book 
  * @param func_bgn 
  */
-void book_anal_func (struct book *book, int func_bgn);
+void book_anal_func (struct book *book, int func_bgn, int bookmark_id);
+
+/**
+ * @brief assume an start point of ctrl flow.
+ * 
+ * @param book 
+ * @param flow_bgn 
+ * @return int 
+ */
+int book_anal_ctrlf_sus (struct book *book, int flow_bgn);
+
+/**
+ * @brief Confirm assumed ctrlflow and register them as an function.
+ * 
+ * @param book 
+ */
+void book_anal_ctrlf_cnf (struct book *book);
+
+/**
+ * @brief Update ctrl flow information.
+ * 
+ * @param book 
+ * @param flow_bgn 
+ * @param new_loc 
+ */
+void book_anal_ctrlf_upd (struct book *book, int flow_bgn, int new_loc);
+
+/**
+ * @brief Confirm a function's information.
+ * 
+ * @param book The book
+ * @param func_bgn The function's begining.
+ * @param func_end The ending of the function should be set.
+ * @return int 
+ */
+int book_anal_func_cnf (struct book *book, int func_bgn, int func_end);
+
+int book_anal_ctrlf_qry (struct book *book, int loc);
+
+//void book_anal_func_upd (struct book *book, int func_bgn, int func_end);
+
+/**
+ * @brief Query if a location is included in a confirmed function.
+ * 
+ * @param book The book.
+ * @param loc The location need to be checked.
+ * @return int 0 if not, or the func_bgn.
+ */
+int book_anal_func_qry (struct book *book, int loc);
 
 /**
  * @brief Create a new bookmark to the book. Success return the index, or -1.
@@ -164,6 +290,14 @@ void book_anal_func (struct book *book, int func_bgn);
  * @return int Index of the bookmark if success, -1 if failed.
  */
 int bookmark_mk (struct book *book, const char *mark_name);
+
+/**
+ * @brief Destroy a bookmark object without save.
+ * 
+ * @param bm The object need to be destroyed.
+ * @return int 0 if success.
+ */
+int bookmark_free (struct bookmark *bm);
 
 /**
  * @brief Create a new bookmark with given format and argument (by sprintf).
@@ -203,7 +337,7 @@ int bookmark_upd (struct book *book, struct bookmark *bookmark);
 int bookmark_rm (struct book *book, int mark_index);
 
 /**
- * @brief Get book mark by location.
+ * @brief Get the first matching book mark by location.
  * 
  * @param book 
  * @param location 

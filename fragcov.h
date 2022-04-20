@@ -71,8 +71,10 @@ int frag_rm (struct fragbook *fbook, int frag_idx);
  */
 struct frag_t *frag_get (struct fragbook *fbook, int frag_idx);
 
+struct frag_t *frag_lget (struct fragbook *fbook, int bgn_loc);
+
 /**
- * @brief Qeury if the given fragment is registered in some fragment.
+ * @brief Query if the given fragment is registered in some fragment.
  * 
  * @param fbook Fragment note book.
  * @param begin The begining of the fragment.
