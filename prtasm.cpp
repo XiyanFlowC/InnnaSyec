@@ -829,6 +829,10 @@ int genasm(unsigned char *buffer, bool check_only)
                             char b = *++sta;
                             if(a >= 'a' && a <= 'f') a = a - 'a' + 'A';
                             if(b >= 'a' && b <= 'f') b = b - 'a' + 'A';
+                            if(a >= 'A' && a <= 'F') a = a - 'A' + 10;
+                            else a -= '0';
+                            if(b >= 'A' && b <= 'F') b = b - 'A' + 10;
+                            else b -= '0';
                             *(buffer + now_loc++) = (a<<4) | b;
                         }
                         if(*sta == 'n')
