@@ -89,13 +89,13 @@ int book_anal_func_cnf (struct book *book, int func_bgn, int func_end) {
 
 int book_anal_func_qry (struct book *book, int loc) {
     sqlite3_stmt *stmt;
-    sqlite3_prepare_v2(book->db, "SELECT * FROM functions WHERE loc >= ?1 AND end_loc <= ?1;", &stmt, NULL);
+    sqlite3_prepare_v2(book->db, "SELECT * FROM functions WHERE loc >= ?1 AND end_loc <= ?1;", -1, &stmt, NULL);
     sqlite3_bind_int(stmt, 1, loc);
     if(SQLITE_OK == sqlite3_step(stmt)) {
         return sqlite3_column_int(stmt, 1);
     }
     else {
-        fprintf(stderr, "book_anal_ctrlf_qry: Query failed, SQLite Error: %d. Aborted.\n", sqlite3_errcode());
+        fprintf(stderr, "book_anal_ctrlf_qry: Query failed, SQLite Error: %d. Aborted.\n", sqlite3_errcode(book->db));
     }
     sqlite3_finalize(stmt);
     return 0; // not found
