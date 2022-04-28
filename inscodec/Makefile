@@ -1,4 +1,4 @@
-codec.o: codec.c
+codec.o: codec.c encode.inc
 	cc codec.c -c -o codec.o
 
 disas.o: disas.c

@@ -97,7 +97,7 @@ case DADDU:
 ans.rtype.rd = instruction.rd;
 ans.rtype.rs = instruction.rs;
 ans.rtype.rt = instruction.rt;
-ans.itype.imm = instruction.imm & 0xFFFF;break;
+break;
 case DIV:
 ans.rtype.rs = instruction.rs;
 ans.rtype.rt = instruction.rt;
