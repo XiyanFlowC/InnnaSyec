@@ -283,6 +283,14 @@ int book_anal_ctrlf_qry (struct book *book, int loc);
 int book_anal_func_qry (struct book *book, int loc);
 
 /**
+ * @brief Try get a location of a function that have not been analyzed yet.
+ * 
+ * @param book The book.
+ * @return int -1 if no such function, or the location.
+ */
+int book_anal_func_get (struct book *book);
+
+/**
  * @brief Create a new bookmark to the book. Success return the index, or -1.
  * 
  * @param book The operating book.
@@ -343,7 +351,7 @@ int bookmark_rm (struct book *book, int mark_index);
  * @param location 
  * @return struct bookmark * The first match if success, NULL if not found.
  */
-struct bookmark *bookmark_lget (struct book *book, unsigned int location);
+struct bookmark *bookmark_lget (struct book *book, unsigned long long location);
 
 /**
  * @brief Get bookmark's index by it's name.

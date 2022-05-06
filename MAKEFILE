@@ -1,36 +1,42 @@
 RUBY_LINK=-I/usr/include/x86_64-linux-gnu/ruby-2.5.0 -I/usr/include/ruby-2.5.0 -lruby-2.5 -lpthread -lgmp -ldl -lcrypt -lm
 SQLITE_HEADER_PATH=./sqlite3/
-CARG=-Wall -I$(SQLITE_HEADER_PATH)
+CARG=-Wall -I$(SQLITE_HEADER_PATH) -g3
 
 prtasm.o: prtasm.cpp
-	g++ prtasm.cpp -c -o prtasm.o -Wall
+	g++ prtasm.cpp -c -o prtasm.o $(CARG)
 
 prtasm: r5900.o prtasm.o
-	g++ prtasm.o ./inscodec/codec.o ./inscodec/disas.o -o prtasm
+	g++ prtasm.o ./inscodec/codec.o ./inscodec/disas.o -o prtasm $(CARG)
 
 preprocessor: preprocessor.cpp
-	g++ preprocessor.cpp -o preprocessor -Wall
+	g++ preprocessor.cpp -o preprocessor $(CARG)
 
 r5900.o: r5900.c r5900.h
-	gcc r5900.c -c -o r5900.o $(CARG)
+	gcc r5900.c -c -o r5900.o $(CARG) -DANAL_DEBUG
 
 book.o: book.c book.h
-	gcc book.c -c -o book.o $(CARG)
+	gcc book.c -c -o book.o $(CARG) -DBOOK_DEBUG
 
 sqlite3.o: sqlite3/sqlite3.c
-	gcc sqlite3/sqlite3.c -c -o sqlite3.o $(CARG) -DSQLITE_ENABLE_FTS5 -D
+	gcc sqlite3/sqlite3.c -c -o sqlite3.o $(CARG) -DSQLITE_ENABLE_FTS5
 
-#fragcov: fragcov.c fragcov.h
-#	gcc fragcov.c -c -o fragcov.o $(CARG)
+fragcov.o: fragcov.c fragcov.h
+	gcc fragcov.c -c -o fragcov.o $(CARG)
 
-all: prtasm preprocessor
+xyutils.o: xyutils.c xyutils
+	gcc xyutils.c -c -o xyutils.o $(CARG)
+
+isy: r5900.o fragcov.o book.o sqlite3.o isy.c
+	gcc isy.c r5900.o fragcov.o book.o sqlite3.o ./inscodec/disas.o ./inscodec/codec.o -o isy $(CARG) -lpthread -lm -ldl
+
+all: prtasm
 
 
-mipsincs: simpgen mips5900.txt
-	./simpgen -i mips5900.txt -o mips5900
+# mipsincs: simpgen mips5900.txt
+# 	./simpgen -i mips5900.txt -o mips5900
 
 cleanobj:
 	rm *.o *.obj
 
 cleanall:
-	rm *.o simpgen prtasm mips5900_*.inc
+	rm *.o prtasm

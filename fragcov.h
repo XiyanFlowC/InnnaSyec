@@ -1,6 +1,12 @@
 #ifndef FRAGCOV_H
 #define FRAGCOV_H
 
+#pragma once
+
+#include <stdlib.h>
+#include <string.h>
+#include <assert.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
