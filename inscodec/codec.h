@@ -150,7 +150,7 @@ extern "C" {
 
 	struct instr_def GetInstructionDefinitionByName(const char* name);
 
-#define OPTION_COUNT 332
+#define OPTION_COUNT 333
 
 #ifdef __cplusplus
 }

@@ -46,6 +46,12 @@ int _get_target_(const char *str) {
 int disas(struct instr_t instr, unsigned int offset, char *buffer) {
     char mnemonic[128];
     char para_buf[512];
+
+    if (instr.opcode < 0 || instr.opcode >= OPTION_COUNT) {
+        strcpy(buffer, "INVALID");
+        return 4;
+    }
+
     struct instr_def def = GetInstructionDefinitionByIndex(instr.opcode);
     strcpy(mnemonic, def.name);
     strlwr(mnemonic);

@@ -104,12 +104,12 @@ int LookUpOpcode(union uinstr instr);
 /* Opcode Look up tables. */
 static int PrimaryOpcodeLookUpTable[] =
 {
-		SPECIAL, REGIMM,        J,      JAL,      BEQ,      BNE,    BLEZL,  BGTZ,
-		ADDI,  ADDIU,     SLTI,    SLTIU,     ANDI,      ORI,     XORI,   LUI,
-		COP0,   COP1, RESERVED, RESERVED,     BEQL,     BNEL,    BLEZL, BGTZL,
-		DADDI, DADDIU,      LDL,      LDR,      MMI, RESERVED,       LQ,    SQ,
-			LB,     LH,      LWL,       LW,      LBU,      LHU,      LWR,   LWU,
-			SB,     SH,      SWL,       SW,      SDL,      SDR,      SWR, CACHE,
+	SPECIAL, REGIMM,        J,      JAL,      BEQ,      BNE,    BLEZ,  BGTZ,
+	ADDI,  ADDIU,     SLTI,    SLTIU,     ANDI,      ORI,     XORI,   LUI,
+	COP0,   COP1, RESERVED, RESERVED,     BEQL,     BNEL,    BLEZL, BGTZL,
+	DADDI, DADDIU,      LDL,      LDR,      MMI, RESERVED,       LQ,    SQ,
+	LB,     LH,      LWL,       LW,      LBU,      LHU,      LWR,   LWU,
+	SB,     SH,      SWL,       SW,      SDL,      SDR,      SWR, CACHE,
 	RESERVED,   LWC1, RESERVED,     PREF, RESERVED,     LDC1, RESERVED,    LD,
 	RESERVED,   SWC1, RESERVED, RESERVED, RESERVED,     SDC1, RESERVED,    SD
 };
@@ -264,12 +264,13 @@ static int C0OpcodeLookUpTable[] =
 {
 	RESERVED, TLBR, TLBWI, RESERVED, RESERVED, RESERVED, TLBWR, RESERVED,
 	TLBP, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED,
-	RESERVED, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED,
+	EI, DI, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED, /* May EI & DI located here... */
 	ERET, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED,
 	RESERVED, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED,
 	RESERVED, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED,
 	RESERVED, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED,
-	EI, DI, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED,
+	EI, DI, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED, /* EI & DI may not here...*/
+	/* Some confusion? */
 };
 
 /* reg, rs */
@@ -293,7 +294,7 @@ static int SOpcodeLookUpTable[] =
 	ADD_S, SUB_S, MUL_S, DIV_S, SQRT_S, ABS_S, MOV_S, NEG_S,
 	ROUND_L_S, TRUNC_L_S, CEIL_L_S, FLOOR_L_S, ROUND_W_S, TRUNC_W_S, CEIL_W_S, FLOOR_W_S,
 	RESERVED, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED,
-	RESERVED, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED,
+	ADDA_S, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED,
 	RESERVED, CVT_D_S, RESERVED, RESERVED, CVT_W_S, CVT_L_S, RESERVED, RESERVED,
 	RESERVED, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED,
 	C_F_S, C_UN_S, C_EQ_S, C_UEQ_S, C_OLT_S, C_ULT_S, C_OLE_S, C_ULE_S,
@@ -373,7 +374,7 @@ struct instr_t DecodeInstruction(unsigned int instruction)
 	}
 	int index = LookUpOpcode(anyl);
 	ans.opcode = index;
-	if (index >= OPTION_COUNT) return ans.opcode = -1, ans;
+	if (index >= OPTION_COUNT || index < 0) return ans.opcode = -1, ans;
 	struct instr_def* def = instructions + index;
 	if (def->type == IT_code)
 	{
@@ -1311,5 +1312,6 @@ struct instr_def instructions[] = {
 	{IT_regf, "TRUNC.W.S", "@fd, @fs"},
 	{IT_regf, "TRUNC.W.D", "@fd, @fs"},
 	{IT_nop, "NOP", "_"},  // Alias of SLL zero, zero, 0
+	{IT_regf, "ADDA.S", "@fd, @fs, @ft"},
 	//{IT_nop, "INVALID", "_"}, // special mark for invalid op
 };
