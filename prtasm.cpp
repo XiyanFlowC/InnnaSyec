@@ -885,12 +885,12 @@ int genasm(unsigned char *buffer)
                         op.optype = ASOP_SET_ADDR;
                         op.para.u64 = now_loc;
                         asops.push_back(op);
-                        op.optype = ASOP_DEF_WORD_TAG;
-                        op.tag = strdup(sta);
-                        asops.push_back(op);
-                        now_loc += 4;
-                        opseq_loc = now_loc;
                     }
+                    op.optype = ASOP_DEF_WORD_TAG;
+                    op.tag = strdup(sta);
+                    asops.push_back(op);
+                    now_loc += 4;
+                    opseq_loc = now_loc;
                 }
                 else {
                     if(tmp.u64 >= 0xffffffff) WARN(4109);

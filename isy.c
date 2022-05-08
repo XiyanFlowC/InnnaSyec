@@ -32,16 +32,33 @@ int loadelf(byte_t *target, const char *filename) {
         fread(target + phs[i].paddr, phs[i].filesz, 1, elf);
     }
 
+    struct section_header *shs = (struct section_header *)malloc(sizeof(struct section_header) * header->shnum);
+    fseek(elf, header->shoff, SEEK_SET);
+    fread(shs, sizeof(struct section_header), header->shnum, elf);
+    char *names = (char *)malloc(sizeof(char) * shs[header->shstrndx].size);
+    fseek(elf, shs[header->shstrndx].offset, SEEK_SET);
+    fread(names, sizeof(char), shs[header->shstrndx].size, elf);
+
+    for (int i = 0; i < header->shnum; ++i) {
+        if (0 == strcmp(names + shs[i].name, ".text")) { // FIXME: using fragcov could provides more flexiblity
+            printf("(%s) flag : %X: Limit set to %08X\n", names + shs[i].name, shs[i].flags, shs[i].addr + shs[i].size);
+            extern unsigned long long cfg_exec_addr_max;
+            cfg_exec_addr_max = shs[i].addr + shs[i].size;
+        }
+    }
+
     fclose(elf);
     
     ret = header->entry;
     free(header);
     free(phs);
+    free(shs);
+    free(names);
     printf("Entry point is %08X\n", ret);
     return ret;
 }
 
-extern cfg_emu_anal_ignore_bmerr;
+// extern cfg_emu_anal_ignore_bmerr;
 
 int main(int argc, char **argv)
 {
@@ -50,7 +67,7 @@ int main(int argc, char **argv)
         puts("Not implemented yet.");
         exit(-1);
     }
-    cfg_emu_anal_ignore_bmerr = 1;
+    // cfg_emu_anal_ignore_bmerr = 1;
     
     flat_memory = (unsigned char *)calloc(0x20000000, sizeof(unsigned char));
 
@@ -58,6 +75,10 @@ int main(int argc, char **argv)
     lib->entry_point = loadelf(flat_memory, argv[1]);
     struct emu_status *sta = emu_init();
     emu_anal(sta, lib, flat_memory);
+// int emu_anal_exec(struct emu_status *emu_stat, struct book *book, unsigned char *memory_buffer);
+//     sta->pc = 0x108E14;
+//     emu_anal_exec(sta, lib, flat_memory);
+//     emu_anal_exec(sta, lib, flat_memory);
 
     book_close(lib);
 }

@@ -390,6 +390,19 @@ int bookmark_renf (struct bookmark *bookmark, const char *new_name_fmt, ...);
  */
 struct bookmark *bookmark_get (struct book *book, int index);
 
+/**
+ * @brief Make a confussing point that hint a un-expected problem find here.
+ * 
+ * @param book The operating book.
+ * @param name The name of the CP.
+ * @param loc The location of the CP.
+ * @param reason The reason why this CP is thrown.
+ * @return int 
+ */
+int confp_mk (struct book *book, const char *name, unsigned long long loc, const char *reason);
+
+int confp_mkf (struct book *book, unsigned long long loc, const char *reason, const char *name_fmt, ...);
+
 int sturct_mk (struct book *book, const char *name);
 
 int struct_rm (struct book *book, int index);

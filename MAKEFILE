@@ -1,6 +1,6 @@
 RUBY_LINK=-I/usr/include/x86_64-linux-gnu/ruby-2.5.0 -I/usr/include/ruby-2.5.0 -lruby-2.5 -lpthread -lgmp -ldl -lcrypt -lm
 SQLITE_HEADER_PATH=./sqlite3/
-CARG=-Wall -I$(SQLITE_HEADER_PATH) -g3
+CARG=-Wall -I$(SQLITE_HEADER_PATH) -O2
 
 prtasm.o: prtasm.cpp
 	g++ prtasm.cpp -c -o prtasm.o $(CARG)
@@ -12,10 +12,10 @@ preprocessor: preprocessor.cpp
 	g++ preprocessor.cpp -o preprocessor $(CARG)
 
 r5900.o: r5900.c r5900.h
-	gcc r5900.c -c -o r5900.o $(CARG) -DANAL_DEBUG
+	gcc r5900.c -c -o r5900.o $(CARG)
 
 book.o: book.c book.h
-	gcc book.c -c -o book.o $(CARG) -DBOOK_DEBUG
+	gcc book.c -c -o book.o $(CARG)
 
 sqlite3.o: sqlite3/sqlite3.c
 	gcc sqlite3/sqlite3.c -c -o sqlite3.o $(CARG) -DSQLITE_ENABLE_FTS5

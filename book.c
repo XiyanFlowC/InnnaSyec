@@ -3,7 +3,7 @@
 #ifdef BOOK_DEBUG
 #ifndef MK_STR
 #define MK_STRR(x) #x
-#define MK_STR(x) (x)
+#define MK_STR(x) MK_STRR(x)
 #endif
 #define debug(...) printf("[book.c:" MK_STR(__LINE__) "] "__VA_ARGS__)
 #else
@@ -45,6 +45,12 @@ struct book *book_init (const char *book_name) {
         " foreign key(bkmkidx) references bookmarks(id));", NULL, NULL, &errmsg);
     if (ret) {
         fprintf(stderr, "book_init: cannot create table: functions. (%s). Ignoring...\n", errmsg);
+    }
+
+    ret = sqlite3_exec(db, "CREATE TABLE problems(id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "name TEXT NOT NULL, loc INT NOT NULL, reason TEXT NOT NULL);", NULL, NULL, &errmsg);
+    if (ret) {
+        fprintf(stderr, "book_init: cannot create table: problems. (%s). Ignoring...\n", errmsg);
     }
     /* End of Database creating */
 
@@ -100,6 +106,7 @@ void book_anal_ctrlf_upd (struct book *book, int flow_bgn, int new_loc) {
 }
 
 int book_anal_func_cnf (struct book *book, int func_bgn, int func_end) {
+    debug("book_anal_func_cnf: %08X:%08X\n", func_bgn, func_end);
     sqlite3_stmt *stmt;
     sqlite3_prepare_v2(book->db, "UPDATE functions SET end_loc = ?, type = 1 WHERE loc = ?;", -1, &stmt, NULL);
     sqlite3_bind_int(stmt, 1, func_end);
@@ -113,10 +120,14 @@ int book_anal_func_get (struct book *book) {
     sqlite3_stmt *stmt;
     sqlite3_prepare_v2(book->db, "SELECT * FROM functions WHERE type = 0;", -1, &stmt, NULL);
     int ret = sqlite3_step(stmt);
-    if (SQLITE_ROW == ret || SQLITE_DONE == ret) {
+    if (SQLITE_ROW == ret) {
         ret = sqlite3_column_int(stmt, 0);
         sqlite3_finalize(stmt);
         return ret;
+    }
+    if (SQLITE_ERROR == ret) {
+        fprintf(stderr, "Query Error: %s\n", sqlite3_errmsg(book->db));
+        return -1;
     }
 
     sqlite3_finalize(stmt);
@@ -127,11 +138,14 @@ int book_anal_func_qry (struct book *book, int loc) {
     sqlite3_stmt *stmt;
     sqlite3_prepare_v2(book->db, "SELECT * FROM functions WHERE loc >= ?1 AND end_loc <= ?1;", -1, &stmt, NULL);
     sqlite3_bind_int(stmt, 1, loc);
-    if(SQLITE_DONE == sqlite3_step(stmt)) {
-        return sqlite3_column_int(stmt, 0);
+    int ret;
+    if(SQLITE_ROW == (ret = sqlite3_step(stmt))) {
+        int ret = sqlite3_column_int(stmt, 0);
+        sqlite3_finalize(stmt);
+        return ret;
     }
-    else {
-        fprintf(stderr, "book_anal_ctrlf_qry: Query failed, SQLite Error: %s. Aborted.\n", sqlite3_errmsg(book->db));
+    else if (ret != SQLITE_DONE) {
+        fprintf(stderr, "book_anal_func_qry: Query failed, SQLite Error: %s. Aborted.\n", sqlite3_errmsg(book->db));
     }
     sqlite3_finalize(stmt);
     return 0; // not found
@@ -144,14 +158,17 @@ int bookmark_mk (struct book *book, const char *mark_name) {
     sqlite3_bind_text(stmt, 1, mark_name, strlen(mark_name), SQLITE_STATIC);
     ret = sqlite3_step(stmt);
     if (ret != SQLITE_DONE) {
-        fprintf(stderr, "bookmark_mk: cannot make %s to bookmarks. (%s). Trying select...\n", mark_name, sqlite3_errmsg(book->db));
+        if (sqlite3_errcode(book->db) == 0x13) return -2;
+
+        fprintf(stderr, "bookmark_mk: cannot make %s to bookmarks. 0x%X(%s). Abort\n", mark_name, sqlite3_errcode(book->db), sqlite3_errmsg(book->db));
+        return -1;
     }
     sqlite3_finalize(stmt);
 
     ret = sqlite3_prepare_v2(book->db, "SELECT * FROM bookmarks WHERE name = ?;", -1, &stmt, NULL);
     sqlite3_bind_text(stmt, 1, mark_name, strlen(mark_name), SQLITE_STATIC);
     ret = sqlite3_step(stmt);
-    if (ret != SQLITE_ROW && ret != SQLITE_DONE) {
+    if (ret != SQLITE_ROW) {
         sqlite3_finalize(stmt);
         fprintf(stderr, "bookmark_mk: cannot select record from bookmarks. (%s). Abort.\n", sqlite3_errmsg(book->db));
         return -1;
@@ -181,6 +198,15 @@ int bookmark_mkf (struct book *book, const char *mark_name_fmt, ...) {
     va_start(list, mark_name_fmt);
 
     vsprintf(fmt_buf, mark_name_fmt, list);
+
+    return bookmark_mk(book, fmt_buf);
+}
+
+int confp_mkf (struct book *book, unsigned long long loc, const char *reason, const char *name_fmt, ...) {
+    va_list list;
+    va_start(list, name_fmt);
+
+    vsprintf(fmt_buf, name_fmt, list);
 
     return bookmark_mk(book, fmt_buf);
 }
@@ -216,7 +242,7 @@ int bookmark_upd (struct book *book, struct bookmark *bookmark) {
 
     if (sqlite3_step(stmt) != SQLITE_DONE) {
         sqlite3_finalize(stmt);
-        fprintf(stderr, "bookmark_upd: cannot update bookmarks. (%s). Abort.\n", sqlite3_errmsg(book->db));
+        fprintf(stderr, "bookmark_upd: cannot update bookmark id=%d. (%s). Abort.\n", bookmark->id, sqlite3_errmsg(book->db));
         return -1;
     }
     sqlite3_finalize(stmt);
@@ -296,6 +322,20 @@ struct bookmark *bookmark_get (struct book *book, int index) {
     sqlite3_bind_int(stmt, 1, index);
 
     return _bm_first_where (book, stmt);
+}
+
+int confp_mk (struct book *book, const char *name, unsigned long long loc, const char *reason) {
+    sqlite3_stmt* stmt;
+    sqlite3_prepare_v2(book->db, "INSERT INTO problems VALUES (NULL, ?, ?, ?);", -1, &stmt, NULL);
+    sqlite3_bind_int64(stmt, 2, loc);
+    sqlite3_bind_text(stmt, 1, name, -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 3, reason, -1, SQLITE_STATIC);
+
+    int ret = sqlite3_step(stmt);
+    if (ret != SQLITE_DONE) return -1;
+
+    sqlite3_finalize(stmt);
+    return 0;
 }
 
 #undef debug

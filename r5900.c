@@ -15,6 +15,7 @@
 
 int cfg_emu_anal_ignore_bmerr = 0;
 unsigned long long cfg_emu_addr_max = 0x20000000;
+unsigned long long cfg_exec_addr_max = 0x20000000;
 
 struct emu_status *emu_init() {
     debug("emu_init()\n");
@@ -106,9 +107,22 @@ int emu_exec(struct emu_status *emu_stat, unsigned char *memory_buffer) {
     case ADDU:
         emu_stat->gpr[instr.rd].r32.lo = emu_stat->gpr[instr.rs].r32.lo + emu_stat->gpr[instr.rt].r32.lo;
         break;
+    case SUB:
+    case SUBU:
+        emu_stat->gpr[instr.rd].r32.lo = emu_stat->gpr[instr.rs].r32.lo - emu_stat->gpr[instr.rt].r32.lo;
+        break;
     case ADDI:
     case ADDIU:
         emu_stat->gpr[instr.rd].r32.lo += *(long long *)&(instr.imm);
+        break;
+    case ORI:
+        emu_stat->gpr[instr.rd].r32.lo |= *(long long *)&(instr.imm);
+        break;
+    case ANDI:
+        emu_stat->gpr[instr.rd].r32.lo &= *(long long *)&(instr.imm);
+        break;
+    case XORI:
+        emu_stat->gpr[instr.rd].r32.lo ^= *(long long *)&(instr.imm);
         break;
     case LB:
         emu_stat->gpr[instr.rt].data = lsbyte(memory_buffer, addr);
@@ -134,8 +148,6 @@ int emu_anal_exec(struct emu_status *emu_stat, struct book *book, unsigned char 
     unsigned int code = *((unsigned int *)(memory_buffer + emu_stat->pc));
     // emu_stat->pc += 4;
     struct instr_t instr = DecodeInstruction(code);
-
-    emu_exec(emu_stat, memory_buffer);
 
     int idx;
     int dtype = -1;
@@ -163,8 +175,10 @@ int emu_anal_exec(struct emu_status *emu_stat, struct book *book, unsigned char 
             clr_glo_conv(emu_stat, instr.rd);
     case ADDI:
     case ADDIU: // can be part II of LI
+    case ORI:
         if (is_glo_conv(emu_stat, instr.rd)) {
             idx = bookmark_mkf(book, "li_%08X_%08X", pc_cache, emu_stat->gpr[instr.rd].r32.lo);
+            if (idx == -2) break;
             if (idx != -1) {
                 struct bookmark *bm = bookmark_get(book, idx);
                 bm->loc = pc_cache;
@@ -200,13 +214,14 @@ int emu_anal_exec(struct emu_status *emu_stat, struct book *book, unsigned char 
         if (is_glo_conv(emu_stat, instr.rs)) {
             flg_glo_conv(emu_stat, instr.rt);
 
-            int idx = bookmark_mkf(book, "ref_%08X", pc_cache);
+            int idx = bookmark_mkf(book, "ref_%08X_%08X", pc_cache, (instr.imm + emu_stat->gpr[instr.rs].r32.lo) & 0xffffffff);
 
-            if (idx == -1) break;
+            if (idx == -1) return -100;
+            if (idx == -2) break;
 
             struct bookmark *bm = bookmark_get(book, idx);
             bm->loc = pc_cache;
-            bm->ref_loc = (emu_stat->gpr[instr.rs].data & 0xffffffff) + instr.imm;
+            bm->ref_loc = (instr.imm + emu_stat->gpr[instr.rs].r32.lo) & 0xffffffff;
             enum mark_type_enum ref_type[] = {
                 MARK_TYPE_REF_BYTE,
                 MARK_TYPE_REF_SBYTE,
@@ -259,19 +274,28 @@ int emu_anal_exec(struct emu_status *emu_stat, struct book *book, unsigned char 
             bookmark_cmt(book, bm);
 
             idx = bookmark_mkf(book, fmts[dtype], ref_loc);
+
+            if (idx == -1) return -100;
+            if (idx == -2) break;
+
             bm = bookmark_get(book, idx);
             bm->loc = ref_loc;
-            bm->type = MARK_TYPE_BYTE;
+            bm->type = dtype[data_type];
             bookmark_cmt(book, bm);
         }
         else
             clr_glo_conv(emu_stat, instr.rt);
         break;
     }
+
+    emu_exec(emu_stat, memory_buffer);
+
     return 0;
 }
 
 int emu_anal_instr(struct emu_status *emu_stat, struct book *book, unsigned char *memory_buffer) {
+    if (emu_stat->pc > cfg_exec_addr_max) return -3;
+
     unsigned int pc_cache = emu_stat->pc;
     unsigned int code = *((unsigned int *)(memory_buffer + emu_stat->pc));
     struct instr_t instr = DecodeInstruction(code);
@@ -279,7 +303,7 @@ int emu_anal_instr(struct emu_status *emu_stat, struct book *book, unsigned char
     #ifdef ANAL_DEBUG
     char buffer[128];
     disas(instr, emu_stat->pc, buffer);
-    debug("anal: %08X:\t%s\n", emu_stat->pc, buffer);
+    debug("anal: %08X:\t%32s\n", emu_stat->pc, buffer);
     #endif
 
     int idx;
@@ -290,7 +314,10 @@ int emu_anal_instr(struct emu_status *emu_stat, struct book *book, unsigned char
         idx = bookmark_mkf(book, "jmpukn_%08X_%08X", pc_cache, instr.imm);
         if (idx == -1) {
             if (!cfg_emu_anal_ignore_bmerr) return -100;
-            // return -2; // FIXME: check if is the unique constraint failed
+            break;
+        }
+        if (idx == -2) {
+            break;
         }
         else {
             struct bookmark *bm = bookmark_get(book, idx);
@@ -326,7 +353,10 @@ int emu_anal_instr(struct emu_status *emu_stat, struct book *book, unsigned char
         idx = bookmark_mkf(book, "br_%08X_%08X", pc_cache, instr.imm);
         if (idx == -1) {
             if (!cfg_emu_anal_ignore_bmerr) return -100;
-            // return -2; // FIXME: check if is the unique constraint failed
+            break;
+        }
+        if (idx == -2) {
+            break;
         }
         else {
             struct bookmark *bm = bookmark_get(book, idx);
@@ -352,7 +382,10 @@ int emu_anal_instr(struct emu_status *emu_stat, struct book *book, unsigned char
         idx = bookmark_mkf(book, "ccal_%08X_%08X", pc_cache, instr.imm);
         if (idx == -1) {
             if (!cfg_emu_anal_ignore_bmerr) return -100;
-            // return -2; // FIXME: check if is the unique constraint failed
+            break;
+        }
+        if (idx == -2) {
+            break;
         }
         else {
             struct bookmark *bm = bookmark_get(book, idx);
@@ -362,17 +395,22 @@ int emu_anal_instr(struct emu_status *emu_stat, struct book *book, unsigned char
             bm->ref_oloc = pc_cache + 8;
             bookmark_cmt(book, bm);
         }
+        debug("func reg\n");
         book_anal_func(book, *(long long *)(&instr.imm) + pc_cache + 4, idx);
         // return *(long long*)(&instr.imm) + pc_cache + 4; // req new ctrl flow anal
         break;
     case JAL:
-    case JALR:
+    //case JALR:
         emu_stat->pc += 4;
         emu_anal_instr(emu_stat, book, memory_buffer);
+
         idx = bookmark_mkf(book, "cal_%08X_%08X", pc_cache, instr.imm);
         if (idx == -1) {
             if (!cfg_emu_anal_ignore_bmerr) return -100;
-            // return -2; // FIXME: check if is the unique constraint failed
+            break;
+        }
+        if (idx == -2) {
+            break;
         }
         else {
             struct bookmark *bm = bookmark_get(book, idx);
@@ -382,7 +420,12 @@ int emu_anal_instr(struct emu_status *emu_stat, struct book *book, unsigned char
             bookmark_cmt(book, bm);
         }
         
-        book_anal_func(book, *(long long *)(&instr.imm) + pc_cache + 4, idx);
+        if (instr.imm > cfg_exec_addr_max) {
+            confp_mkf(book, "This call jump to an area that un-executable.", pc_cache, "out_jump_%08X", pc_cache);
+        } else {
+            debug("func reg %08X\n", instr.imm);
+            book_anal_func(book, instr.imm, idx);
+        }
         break;
     case JR: // switch case or return
         emu_stat->pc += 4;
@@ -410,7 +453,10 @@ int emu_anal_instr(struct emu_status *emu_stat, struct book *book, unsigned char
         idx = bookmark_mkf(book, "syscall_%08X_%llu", pc_cache, instr.imm);
         if (idx == -1) {
             if (!cfg_emu_anal_ignore_bmerr) return -100;
-            // return -2; // FIXME: check if is the unique constraint failed
+            break;
+        }
+        if (idx == -2) {
+            break;
         }
         else {
             struct bookmark *bm = bookmark_get(book, idx);
@@ -450,6 +496,10 @@ int emu_anal_ctrlflow(struct emu_status *emu_stat, struct book *book, unsigned c
         if (ret) {
             if (ret == -1 || ret == -2) {
                 debug("---------ctrlflow terminate %08X <- %08X (type=%d)\n", emu_stat->pc, emu_stat->func_begin, ret);
+                return 0;
+            }
+            if (ret == -3){
+                debug("---------ctrlflow terminate force by out of range [%08X <- %08X (type=%d)]\n", emu_stat->pc, emu_stat->func_begin, ret);
                 return 0;
             }
             if (ret == -100)
@@ -496,6 +546,8 @@ int emu_anal(struct emu_status *emu_stat, struct book *book, unsigned char *memo
 
     int func;
     while (-1 != (func = book_anal_func_get(book))) {
+        printf("func anal on going... [%08X]\n", func);
+
         pc = emu_stat->pc = func;
         debug("PC set to func begin of %08X\n", func);
 
