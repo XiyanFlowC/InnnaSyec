@@ -90,7 +90,7 @@ int emu_exec(struct emu_status *emu_stat, unsigned char *memory_buffer) {
     struct instr_t instr = DecodeInstruction(code);
     // debug("emu_exec: Op-%d is submitted to emu.\n", instr.opcode);
 
-    int idx;
+    // int idx;
     unsigned int addr = (instr.imm + emu_stat->gpr[instr.rs].r32.lo) & 0xffffffff;
     switch (instr.opcode) {
     case PADDUW:
@@ -113,16 +113,16 @@ int emu_exec(struct emu_status *emu_stat, unsigned char *memory_buffer) {
         break;
     case ADDI:
     case ADDIU:
-        emu_stat->gpr[instr.rd].r32.lo += *(long long *)&(instr.imm);
+        emu_stat->gpr[instr.rd].r32.lo = emu_stat->gpr[instr.rt].r32.lo + *(long long *)&(instr.imm);
         break;
     case ORI:
-        emu_stat->gpr[instr.rd].r32.lo |= *(long long *)&(instr.imm);
+        emu_stat->gpr[instr.rd].r32.lo = emu_stat->gpr[instr.rt].r32.lo | *(long long *)&(instr.imm);
         break;
     case ANDI:
-        emu_stat->gpr[instr.rd].r32.lo &= *(long long *)&(instr.imm);
+        emu_stat->gpr[instr.rd].r32.lo = emu_stat->gpr[instr.rt].r32.lo & *(long long *)&(instr.imm);
         break;
     case XORI:
-        emu_stat->gpr[instr.rd].r32.lo ^= *(long long *)&(instr.imm);
+        emu_stat->gpr[instr.rd].r32.lo = emu_stat->gpr[instr.rs].r32.lo ^ *(long long *)&(instr.imm);
         break;
     case LB:
         emu_stat->gpr[instr.rt].data = lsbyte(memory_buffer, addr);
@@ -149,6 +149,8 @@ int emu_anal_exec(struct emu_status *emu_stat, struct book *book, unsigned char 
     // emu_stat->pc += 4;
     struct instr_t instr = DecodeInstruction(code);
 
+    emu_exec(emu_stat, memory_buffer);
+
     int idx;
     int dtype = -1;
     switch (instr.opcode) {
@@ -173,19 +175,22 @@ int emu_anal_exec(struct emu_status *emu_stat, struct book *book, unsigned char 
         }
         else
             clr_glo_conv(emu_stat, instr.rd);
+        break;
     case ADDI:
     case ADDIU: // can be part II of LI
     case ORI:
-        if (is_glo_conv(emu_stat, instr.rd)) {
+        if (is_glo_conv(emu_stat, instr.rs) || instr.rs == 0) {
             idx = bookmark_mkf(book, "li_%08X_%08X", pc_cache, emu_stat->gpr[instr.rd].r32.lo);
             if (idx == -2) break;
             if (idx != -1) {
                 struct bookmark *bm = bookmark_get(book, idx);
                 bm->loc = pc_cache;
                 bm->ref_loc = emu_stat->gpr[instr.rd].r32.lo;
+                bm->type = MARK_TYPE_LI_MARK;
                 bookmark_cmt(book, bm);
             }
-        }
+            flg_glo_conv(emu_stat, instr.rt);
+        } else clr_glo_conv(emu_stat, instr.rt);
         break;
     case LBU:
         dtype = 0;
@@ -287,8 +292,6 @@ int emu_anal_exec(struct emu_status *emu_stat, struct book *book, unsigned char 
             clr_glo_conv(emu_stat, instr.rt);
         break;
     }
-
-    emu_exec(emu_stat, memory_buffer);
 
     return 0;
 }
@@ -421,7 +424,7 @@ int emu_anal_instr(struct emu_status *emu_stat, struct book *book, unsigned char
         }
         
         if (instr.imm > cfg_exec_addr_max) {
-            confp_mkf(book, "This call jump to an area that un-executable.", pc_cache, "out_jump_%08X", pc_cache);
+            confp_mkf(book, pc_cache, "This call jump to an area that un-executable.", "out_jump_%08X", pc_cache);
         } else {
             debug("func reg %08X\n", instr.imm);
             book_anal_func(book, instr.imm, idx);
@@ -450,7 +453,7 @@ int emu_anal_instr(struct emu_status *emu_stat, struct book *book, unsigned char
         break;
     case SYSCALL:
         emu_stat->pc += 4;
-        idx = bookmark_mkf(book, "syscall_%08X_%llu", pc_cache, instr.imm);
+        idx = bookmark_mkf(book, "syscall_%08X", pc_cache);
         if (idx == -1) {
             if (!cfg_emu_anal_ignore_bmerr) return -100;
             break;
@@ -486,7 +489,7 @@ int emu_anal_ctrlflow(struct emu_status *emu_stat, struct book *book, unsigned c
     int counter = 100000;
     while (1) {
         if (counter <= 0) {
-            fprintf(stderr, "Dead loop may occured near %08X(Over 100000 instructions executed), kill branch by default.\n");
+            fprintf(stderr, "Dead loop may occured near %08X(Over 100000 instructions executed), kill branch by default.\n", emu_stat->pc);
             return -2;
         }
 
@@ -529,6 +532,8 @@ int emu_anal_ctrlflow(struct emu_status *emu_stat, struct book *book, unsigned c
 int emu_anal_func(struct emu_status *emu_stat, struct book *book, unsigned char *memory_buffer) {
     debug("++++++++func anal %08X\n", emu_stat->pc);
     emu_stat->func_begin = emu_stat->pc;
+    emu_stat->gpr_conv = 1;
+    emu_stat->fpr_conv = 1;
     book_anal_ctrlf_sus (book, emu_stat->pc);
     emu_anal_ctrlflow (emu_stat, book, memory_buffer);
     book_anal_ctrlf_cnf (book);
@@ -537,25 +542,84 @@ int emu_anal_func(struct emu_status *emu_stat, struct book *book, unsigned char 
 }
 
 int emu_anal(struct emu_status *emu_stat, struct book *book, unsigned char *memory_buffer) {
-    unsigned long long pc = emu_stat->pc = book->entry_point;
+    // unsigned long long pc = 
+    emu_stat->pc = book->entry_point;
     debug("PC set to entry point (%08X)\n", emu_stat->pc);
 
-    emu_stat->gpr_conv = 0;
-    emu_stat->fpr_conv = 0;
+    emu_stat->gpr_conv = 1;
+    emu_stat->fpr_conv = 1;
+    int idx = bookmark_mk(book, "entrypoint");
+    if (idx == -1) return -1;
+    if (idx != -2) {
+        struct bookmark *bm = bookmark_get(book, idx);
+        bm->loc = emu_stat->pc;
+        bm->type = MARK_TYPE_SUBROUTINE;
+        bookmark_cmt(book, bm);
+    }
+    book_anal_func (book, emu_stat->pc, idx);
     emu_anal_func(emu_stat, book, memory_buffer);
 
     int func;
     while (-1 != (func = book_anal_func_get(book))) {
         printf("func anal on going... [%08X]\n", func);
 
-        pc = emu_stat->pc = func;
+        // pc = emu_stat->pc = func;
+        emu_stat->pc = func;
         debug("PC set to func begin of %08X\n", func);
 
-        emu_stat->gpr_conv = 0;
-        emu_stat->fpr_conv = 0;
+        emu_stat->gpr_conv = 1;
+        emu_stat->fpr_conv = 1;
         emu_anal_func(emu_stat, book, memory_buffer);
     }
 
     return 0;
 }
+
+int emu_ldfile(struct emu_status *emu_stat, struct book* book, unsigned char *memory_buffer, const char *file_name) {
+    int ret;
+    FILE* elf = fopen(file_name, "rb");
+    struct elf_header *header = (struct elf_header*)malloc(sizeof(struct elf_header));
+    if((ret = fread(header, sizeof(struct elf_header), 1, elf)) != 1) {
+        fprintf(stderr, "ERROR: Can't read elf file (%d): %s.\n", ret, strerror(errno));
+        free(header);
+        fclose(elf);
+        exit(-1);
+    };
+
+    struct program_header *phs = (struct program_header *)malloc(sizeof(struct program_header) * header->phnum);
+    fseek(elf, header->phoff, SEEK_SET);
+    fread(phs, sizeof(struct program_header), header->phnum, elf);
+
+    for (int i = 0; i < header->phnum; ++i) {
+        if (phs[i].type != 1) continue; // non PT_LOAD, skip
+        fseek(elf, phs[i].offset, SEEK_SET);
+        fread(memory_buffer + phs[i].paddr, phs[i].filesz, 1, elf);
+    }
+
+    struct section_header *shs = (struct section_header *)malloc(sizeof(struct section_header) * header->shnum);
+    fseek(elf, header->shoff, SEEK_SET);
+    fread(shs, sizeof(struct section_header), header->shnum, elf);
+    char *names = (char *)malloc(sizeof(char) * shs[header->shstrndx].size);
+    fseek(elf, shs[header->shstrndx].offset, SEEK_SET);
+    fread(names, sizeof(char), shs[header->shstrndx].size, elf);
+
+    for (int i = 0; i < header->shnum; ++i) {
+        if (0 == strcmp(names + shs[i].name, ".text")) { // FIXME: using fragcov could provides more flexiblity
+            debug("(%s) flag : %X: Limit set to %08X\n", names + shs[i].name, shs[i].flags, shs[i].addr + shs[i].size);
+            cfg_exec_addr_max = shs[i].addr + shs[i].size;
+        }
+    }
+
+    fclose(elf);
+    
+    book->entry_point = emu_stat->pc = header->entry;
+
+    free(header);
+    free(phs);
+    free(shs);
+    free(names);
+    debug("Entry point is %08X\n", book->entry_point);
+    return 0;
+}
+
 #undef debug

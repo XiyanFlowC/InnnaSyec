@@ -129,6 +129,8 @@ struct function {
     int bkmkidx; // correspoding bookmarks' index
 };
 
+typedef int(*xtr_callback)(int reg_num, const char *param, void *data);
+
 struct book {
     sqlite3 *db;
     char *name;
@@ -140,15 +142,78 @@ struct book {
     /*temporary data, introduced by mistake, remove them in the future!*/
     struct fragbook* fbook;
     /*do not save these data!*/
+
+    void *xtr_data[32];
+    xtr_callback xtr_finializers[32];
+    xtr_callback xtr_executers[32];
+    xtr_callback xtr_initializers[32];
+    int xtr_regid[32];
+    char xtr_nm[32][32];
 };
+
+/**
+ * @brief Register an extra data and the callback to book
+ * 
+ * @param book The operating book
+ * @param id The id of this extra compnent
+ * @param finalizer The finializer, will be called when close the book
+ * @param executer The executer, will be called when someone called
+ * @param data_ptr The pointer to the extra data
+ * @return int 0 if success
+ */
+int book_regxtr(struct book *book, int id, xtr_callback finalizer, xtr_callback executer, xtr_callback initializer, void *data_ptr, const char *name);
+
+/**
+ * @brief Get an extra data set by extra part
+ * 
+ * @param book The book
+ * @param reg_num The registered id
+ * @return void* The extra data.
+ */
+void *book_getxtrdata(struct book *book, int reg_num);
+
+// void *book_getxtrdata_by_name(struct book *book, const char *name);
+
+/**
+ * @brief Invoke extra part
+ * 
+ * @param book 
+ * @param reg_num 
+ * @param parameter 
+ * @return int -1 if failed to call.
+ */
+int book_xtrinvoke(struct book *book, int reg_num, const char *parameter);
+
+/**
+ * @brief Call all registered extra module in the book.
+ * 
+ * @param book The specified book.
+ * @return int 0 if success, the failed call reg_num if any callback returns non-zero.
+ */
+int book_xtrinit(struct book *book);
+
+/**
+ * @brief Get a extra part's index by its name.
+ * 
+ * @param book 
+ * @param name 
+ * @return int The id of the part.
+ */
+int book_get_xtridx_bynm(struct book* book, const char *name);
+
+/**
+ * @brief Get a extra part's index by its id.
+ * 
+ * @param book 
+ * @param id 
+ * @return int 
+ */
+int book_get_xtridx_byid(struct book* book, int id);
 
 /**
  * @brief Initialize a new book.
  * 
  * @param book_name The name of the book.
- * @param bookmark_num 
- * @param patch_count 
- * @param comment_count 
  * @return struct book* 
  */
 struct book *book_init (const char *book_name);
@@ -205,28 +270,6 @@ int book_imstruct(struct book* book, unsigned char *buffer);
 int book_exec(const char *filename);
 
 /**
- * @brief Set a new string encoder for a book.
- * 
- * @param book The book.
- * @param callback a function pointer point to a function that recv 2 params. The utf8_str
- * is the string that need to be encoded, and the buffer is the target that need to be write, this
- * function should return a int which is the byte this function written to the buffer. -1 should
- * be returned if utf8_str is impossible to encode.
- */
-void book_strenc_set(struct book* book, int (*callback)(const char *utf8_str, unsigned char *buffer));
-
-/**
- * @brief Set a new string decoder for a book.
- * 
- * @param book The book.
- * @param callback a function pointer point to a funciton that recv 2 params. The utf8_str
- * is a pointer to the char* which need to point to a NEW malloc() assigned memory which contains
- * the decoded utf8 string, the raw_str is the pointer point to the raw string. And, it should return
- * the length it handled to raw_str. -1 should be returned if the raw_str is unrecognizable.
- */
-void book_strdec_set(struct book* book, int *(*callback)(unsigned char *raw_str, char **utf8_str));
-
-/**
  * @brief Add a function's head location to the book for futher check.
  * 
  * @param book 
@@ -272,6 +315,15 @@ int book_anal_func_cnf (struct book *book, int func_bgn, int func_end);
 int book_anal_ctrlf_qry (struct book *book, int loc);
 
 //void book_anal_func_upd (struct book *book, int func_bgn, int func_end);
+
+/**
+ * @brief Get the end location of the given function begining location.
+ * 
+ * @param book The book
+ * @param loc The location of the begining
+ * @return int The 0 of the end
+ */
+int book_func_end (struct book *book, int loc);
 
 /**
  * @brief Query if a location is included in a confirmed function.

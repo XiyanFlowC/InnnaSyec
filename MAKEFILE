@@ -1,6 +1,6 @@
 RUBY_LINK=-I/usr/include/x86_64-linux-gnu/ruby-2.5.0 -I/usr/include/ruby-2.5.0 -lruby-2.5 -lpthread -lgmp -ldl -lcrypt -lm
 SQLITE_HEADER_PATH=./sqlite3/
-CARG=-Wall -I$(SQLITE_HEADER_PATH) -O2
+CARG=-Wall -I$(SQLITE_HEADER_PATH) -g3
 
 prtasm.o: prtasm.cpp
 	g++ prtasm.cpp -c -o prtasm.o $(CARG)
@@ -23,11 +23,17 @@ sqlite3.o: sqlite3/sqlite3.c
 fragcov.o: fragcov.c fragcov.h
 	gcc fragcov.c -c -o fragcov.o $(CARG)
 
-xyutils.o: xyutils.c xyutils
+xyutils.o: xyutils.c xyutils.h
 	gcc xyutils.c -c -o xyutils.o $(CARG)
 
-isy: r5900.o fragcov.o book.o sqlite3.o isy.c
-	gcc isy.c r5900.o fragcov.o book.o sqlite3.o ./inscodec/disas.o ./inscodec/codec.o -o isy $(CARG) -lpthread -lm -ldl
+isy-str.o: isy-str.c isy-str.h
+	gcc isy-str.c -c -o isy-str.o $(CARG)
+
+bst.o: bst.h bst.c
+	gcc bst.c -c -o bst.o $(CARG)
+
+isy: r5900.o fragcov.o book.o sqlite3.o isy.c bst.o isy-str.o xyutils.o
+	gcc xyutils.o isy.c r5900.o fragcov.o book.o sqlite3.o isy-str.o bst.o ./inscodec/disas.o ./inscodec/codec.o -o isy $(CARG) -lpthread -lm -ldl
 
 all: prtasm
 
@@ -35,8 +41,8 @@ all: prtasm
 # mipsincs: simpgen mips5900.txt
 # 	./simpgen -i mips5900.txt -o mips5900
 
-cleanobj:
-	rm *.o *.obj
+clean:
+	rm *.o
 
 cleanall:
 	rm *.o prtasm

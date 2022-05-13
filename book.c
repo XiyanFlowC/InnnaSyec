@@ -58,7 +58,19 @@ struct book *book_init (const char *book_name) {
     book->struct_count = 0;
     book->struct_max = strdefc;
     book->structs = (struct bin_struct*)malloc(strdefc * sizeof(struct bin_struct));
+
+    memset(book->xtr_regid, 0, sizeof(book->xtr_data));
     return book;
+}
+
+int book_xtrinit(struct book *book) {
+    for(int i = 0; i < 32; ++i) {
+        if (book->xtr_regid[i]) {
+            int ret = book->xtr_initializers[i](book->xtr_regid[i], "", book->xtr_data[i]);
+            if (ret) return ret;
+        }
+    }
+    return 0;
 }
 
 int book_close (struct book* book) {
@@ -136,7 +148,7 @@ int book_anal_func_get (struct book *book) {
 
 int book_anal_func_qry (struct book *book, int loc) {
     sqlite3_stmt *stmt;
-    sqlite3_prepare_v2(book->db, "SELECT * FROM functions WHERE loc >= ?1 AND end_loc <= ?1;", -1, &stmt, NULL);
+    sqlite3_prepare_v2(book->db, "SELECT * FROM functions WHERE loc <= ?1 AND end_loc >= ?1;", -1, &stmt, NULL);
     sqlite3_bind_int(stmt, 1, loc);
     int ret;
     if(SQLITE_ROW == (ret = sqlite3_step(stmt))) {
@@ -151,8 +163,24 @@ int book_anal_func_qry (struct book *book, int loc) {
     return 0; // not found
 }
 
+int book_func_end (struct book *book, int loc) {
+    sqlite3_stmt *stmt;
+    sqlite3_prepare_v2(book->db, "SELECT * FROM functions WHERE loc = ?;", -1, &stmt, NULL);
+    sqlite3_bind_int(stmt, 1, loc);
+    int ret;
+    if(SQLITE_ROW == (ret = sqlite3_step(stmt))) {
+        int ret = sqlite3_column_int(stmt, 1);
+        sqlite3_finalize(stmt);
+        return ret;
+    }
+    else if (ret != SQLITE_DONE) {
+        fprintf(stderr, "book_anal_func_qry: Query failed, SQLite Error: %s. Aborted.\n", sqlite3_errmsg(book->db));
+    }
+    sqlite3_finalize(stmt);
+    return 0; // not found
+}
+
 int bookmark_mk (struct book *book, const char *mark_name) {
-    char *errmsg;
     sqlite3_stmt *stmt;
     int ret = sqlite3_prepare_v2(book->db, "INSERT INTO bookmarks VALUES (NULL, ?, NULL, NULL, NULL, NULL, NULL, NULL);", -1, &stmt, NULL);
     sqlite3_bind_text(stmt, 1, mark_name, strlen(mark_name), SQLITE_STATIC);
@@ -255,6 +283,7 @@ int bookmark_ren (struct bookmark *bookmark, const char *new_name) {
 
     free(bookmark->name);
     bookmark->name = strdup(new_name);
+    return 0;
 }
 
 int bookmark_renf (struct bookmark *bookmark, const char *new_name_fmt, ...) {
@@ -270,7 +299,7 @@ struct bookmark *_bm_first_where (struct book *book, sqlite3_stmt *stmt) {
     while (sqlite3_step(stmt) != SQLITE_DONE) {
         struct bookmark *ans = (struct bookmark*)malloc(sizeof(struct bookmark));
         ans->id = sqlite3_column_int(stmt, 0);
-        ans->name = strdup(sqlite3_column_text(stmt, 1));
+        ans->name = strdup((const char *)sqlite3_column_text(stmt, 1));
         ans->loc = sqlite3_column_int64(stmt, 2);
         ans->ref_loc = sqlite3_column_int64(stmt, 3);
         ans->ref_oloc = sqlite3_column_int64(stmt, 4);
@@ -290,7 +319,7 @@ void _bm_each_where (struct book *book, sqlite3_stmt *stmt, int (*callback)(stru
     while (sqlite3_step(stmt) != SQLITE_DONE) {
         struct bookmark *ans = (struct bookmark*)malloc(sizeof(struct bookmark));
         ans->id = sqlite3_column_int(stmt, 0);
-        ans->name = strdup(sqlite3_column_text(stmt, 1));
+        ans->name = strdup((const char *)sqlite3_column_text(stmt, 1));
         ans->loc = sqlite3_column_int64(stmt, 2);
         ans->ref_loc = sqlite3_column_int64(stmt, 3);
         ans->ref_oloc = sqlite3_column_int64(stmt, 4);
@@ -336,6 +365,53 @@ int confp_mk (struct book *book, const char *name, unsigned long long loc, const
 
     sqlite3_finalize(stmt);
     return 0;
+}
+
+
+int book_regxtr(struct book *book, int id, xtr_callback finalizer, xtr_callback executer, xtr_callback initializer, void *data_ptr, const char *name) {
+    for (int i = 0; i < 32; ++i) {
+        if (book->xtr_regid[i] == 0) {
+            book->xtr_regid[i] = id;
+            book->xtr_data[i] = data_ptr;
+            book->xtr_initializers[i] = initializer;
+            book->xtr_executers[i] = executer;
+            book->xtr_finializers[i] = finalizer;
+
+            return 0;
+        }
+    }
+    return -1;
+}
+
+void *book_getxtrdata(struct book *book, int reg_num) {
+    int id = book_get_xtridx_byid(book, reg_num);
+    return id != -1 ? book->xtr_data[id] : NULL;
+}
+
+int book_xtrinvoke(struct book *book, int reg_num, const char *parameter) {
+    int id = book_get_xtridx_byid(book, reg_num);
+    if (id != -1) {
+        return book->xtr_executers[id](reg_num, parameter, book->xtr_data[id]);
+    }
+    return -1;
+}
+
+int book_get_xtridx_bynm(struct book* book, const char *name) {
+    for (int i = 0; i < 32; ++i) {
+        if (!strcmp(book->xtr_nm[i], name)) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+int book_get_xtridx_byid(struct book* book, int id) {
+    for (int i = 0; i < 32; ++i) {
+        if (book->xtr_regid[i] == id) {
+            return i;
+        }
+    }
+    return -1;
 }
 
 #undef debug
