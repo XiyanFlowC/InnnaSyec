@@ -5,10 +5,9 @@
 #include <string.h>
 #include "inscodec/disas.h"
 #include "inscodec/ins_def.h"
-#include <string>
-#include <stack>
-#include <deque>
-#include <assert.h>
+// #include <string>
+// #include <stack>
+// #include <vector>
 // #include <map>
 #include <stdio.h>
 
@@ -28,8 +27,6 @@ static int mode = 0;
 // #define MODE_CDISASM 5
 #define MODE_EXPORT 6
 
-static int is_delayslot = 0;
-
 // 反汇编时，不可认识的代码的输出方式（0.byte, 1.half, 2.word）
 static int dmode = 2;
 #define DM_DB 0
@@ -44,41 +41,12 @@ static char *scriptnm, *outputnm;
 static bool do_invalid = false /*, do_purge = true*/, stop_if_overline = false, stop_firsterr = false, move_only_word = false;
 int cerror = 0, cwarn = 0;
 
-enum asop_type {
-    ASOP_SET_ADDR,
-    ASOP_ASM,
-    ASOP_CALC,
-    ASOP_SET_OFFSET,
-    // ASOP_SET_WARN_LOC,
-    // ASOP_SET_VAR,
-    ASOP_ASM_IMM_TAG,
-    ASOP_LA,
-    ASOP_DEF_WORD_TAG,
-    ASOP_POST_ASM,
-};
-
-struct asop_t {
-    asop_type optype;
-    union {
-        unsigned long long u64;
-        long long i64;
-        unsigned int u32;
-        int i32;
-        instr_t instr;
-        char *str;
-    } para;
-    char *tag;
-};
-
-std::deque<asop_t> asops;
-
 int handle_i(const char *filename);
 int handle_o(const char *filename);
 int handle_s(const char *filename);
 int handle_D(const char *hexstr);
 int handle_A(const char *assembly);
 int show_help(const char *stub);
-int asop_exec(unsigned char *buffer);
 // 获取并输出错误信息
 void error(int code);
 // 获取并输出警告信息
@@ -87,7 +55,7 @@ void warn(int code);
 void fatal(int code);
 void info(int code);
 //int check();
-int genasm(unsigned char *buffer);
+int genasm(unsigned char *buffer, bool check_only = false);
 
 int main(int argc, const char **argv)
 {
@@ -254,8 +222,8 @@ int main(int argc, const char **argv)
             fatal(2002);
         if (script == NULL)
             fatal(2003);
-        if (0 == genasm(buf))
-            asop_exec(buf);
+        if (0 == genasm(buf, true))
+            genasm(buf);
 
         if(!cerror)
             fwrite(buf, len, 1, output);
@@ -357,214 +325,6 @@ static unsigned long long tag_loc[LABEL_MAX_COUNT], tag_vma[LABEL_MAX_COUNT];
 static char tag_nm[LABEL_MAX_COUNT][128];
 static int tag_p = 0;
 
-unsigned long long get_tag_idx (const char *tagname) {
-    for(int i = 0; i < tag_p; ++i) {
-        if(0 == strcmp(tag_nm[i], tagname)) {
-            return i;
-        }
-    }
-    return -1;
-}
-
-int mk_tag(const char *tagname, unsigned long long vma) {
-    if(strlen(tagname) >= 128) return -1;
-    if(tag_p >= LABEL_MAX_COUNT) return -2;
-    
-    strcpy(tag_nm[tag_p], tagname);
-    tag_vma[tag_p++] = vma;
-    return tag_p - 1;
-}
-
-int asop_exec(unsigned char *buffer) {
-    unsigned long long now_loc = 0, offset = 0;
-    while(!asops.empty()) {
-        auto op = asops.front();
-        int instype;
-        unsigned char *buf = buffer + now_loc;
-        char *lbl;
-        char opc[8], src[128], dst[128], tar[128];
-        char line[1024];
-        static unsigned long long reg[8];
-        int tmp;
-        debug("%llX %llX:\t", now_loc, now_loc + offset);
-
-        switch(op.optype) {
-            case ASOP_SET_ADDR:
-            debug("SETADDR%lld\n", op.para.u32);
-            now_loc = op.para.u64;
-            break;
-            case ASOP_SET_OFFSET:
-            debug("SETOFFSET%lld\n", op.para.u32);
-            offset = op.para.u64;
-            break;
-            case ASOP_ASM:
-            instype = GetInstructionDefinitionByIndex(op.para.instr.opcode).type;
-            if (instype == IT_imma || instype == IT_jump) is_delayslot = 2;
-            *((unsigned int *)(buffer + now_loc)) = EncodeInstruction(op.para.instr);
-            debug("ASM\n");
-            // disas(DecodeInstruction(EncodeInstruction(op.para.instr)), now_loc + offset, tar);
-            // puts(tar);
-            now_loc += 4;
-            break;
-            case ASOP_DEF_WORD_TAG:
-            debug("WORD DEF\n");
-            for(int i = 0; i < tag_p; ++i)
-            {
-                if(0 == strcmp(op.tag, tag_nm[i]))
-                {
-                    *((unsigned int *)(buffer + now_loc)) = (unsigned int)tag_vma[i];
-                }
-            }
-            free(op.tag);
-            now_loc += 4;
-            break;
-            case ASOP_ASM_IMM_TAG:
-            debug("IMM_TAG\n");
-            for(int i = 0; i < tag_p; ++i)
-            {
-                if(0 == strcmp(op.tag, tag_nm[i]))
-                {
-                    instype = GetInstructionDefinitionByIndex(op.para.instr.opcode).type;
-                    op.para.instr.imm = (unsigned int)tag_vma[i];
-                    if (instype == IT_imma) op.para.instr.imm -= now_loc + offset + 4;
-
-                    *((unsigned int *)(buffer + now_loc)) = EncodeInstruction(op.para.instr);
-                    break;
-                }
-            }
-            free(op.tag);
-            now_loc += 4;
-            break;
-            case ASOP_LA:
-            debug("LA\n");
-            strcpy(line, op.para.str);
-            lbl = str_first(line, ',');
-            if(lbl == NULL) return -3;
-            lbl = str_first_not(lbl + 1, '\r');
-            if(lbl == NULL) return -3;
-            
-            for(int i = 0; i < tag_p; ++i)
-            {
-                if(0 == strcmp(tag_nm[i], lbl))
-                {
-                    instr_t ans;
-                    sprintf(lbl, "%llu", tag_vma[i]);
-                    parse_param(str_first_not(line + 3, '\r'), "$rt, #im", &ans);
-                    int low = ans.imm & 0xffff;
-                    ans.opcode = LUI;
-                    ans.imm >>= 16;
-                    if(low > 0x7fff) ans.imm += 1;
-                    if(is_delayslot)
-                    {
-                        *((unsigned int *)buf) = *((unsigned int *)buf - 1);
-                        auto tins = DecodeInstruction(*((unsigned int *)buf - 1));
-                        if(instype == IT_imma)
-                            tins.imm -= 1, *((unsigned int *)buf) = EncodeInstruction(tins);
-                            // puts("警告：延迟槽中可能有问题。");
-                        *((unsigned int *)buf - 1) = EncodeInstruction(ans);
-                    }
-                    else
-                        *((unsigned int *)buf) = EncodeInstruction(ans);
-                    buf += 4;
-                    ans.opcode = ADDIU;
-                    ans.rs = ans.rt;
-                    ans.imm = low > 0x7fff ? -(0x10000 - low) : low;
-                    *((unsigned int *)buf) = EncodeInstruction(ans);
-                    if(is_delayslot) --is_delayslot;
-                    now_loc += 8;
-                    break;
-                }
-            }
-            free(op.para.str);
-            break;
-            case ASOP_CALC:
-            debug("CALC\n");
-            
-            if(3 <= (tmp = sscanf(op.para.str, "%s %s %s %s", opc, dst, src, tar))) {
-                unsigned long long *pdst, psrc, ptar;
-                // --- src proc ---
-                int idx = get_tag_idx(src);
-                if(idx == -1) {
-                    if (src[0] == '$') {
-                        sscanf(src + 1, "%d", &idx);
-                        psrc = reg[idx];
-                    }
-                    else {
-                        parse_int((long long *)&psrc, src);
-                    }
-                }
-                else {
-                    psrc = tag_vma[idx];
-                }
-
-                // --- tar proc ---
-                if(tmp == 4){
-                    idx = get_tag_idx(tar);
-                    if(idx == -1) {
-                        if (tar[0] == '$') {
-                            sscanf(tar + 1, "%d", &idx);
-                            ptar = reg[idx];
-                        }
-                        else {
-                            parse_int((long long *)&ptar, tar);
-                        }
-                    }
-                    else {
-                        ptar = tag_vma[idx];
-                    }
-                }
-
-                // --- dst proc ---
-                idx = get_tag_idx(dst);
-                if(idx == -1) {
-                    if (dst[0] == '$') {
-                        sscanf(tar + 1, "%d", &idx);
-                        pdst = reg + idx;
-                    }
-                    else {
-                        pdst = tag_vma + mk_tag(dst, 0);
-                    }
-                }
-                else {
-                    pdst = tag_vma + idx;
-                }
-
-                if(strcmp(opc, "add") == 0) {
-                    *pdst = psrc + ptar;
-                } else if (strcmp(opc, "sub") == 0) {
-                    *pdst = psrc - ptar;
-                } else if (strcmp(opc, "mult") == 0) {
-                    *pdst = psrc * ptar;
-                } else if (strcmp(opc, "div") == 0) {
-                    *pdst = psrc / ptar;
-                } else if (strcmp(opc, "mod") == 0) {
-                    *pdst = psrc % ptar;
-                } else if (strcmp(opc, "or") == 0) {
-                    *pdst = psrc | ptar;
-                } else if (strcmp(opc, "and") == 0) {
-                    *pdst = psrc & ptar;
-                } else if (strcmp(opc, "nand") == 0) {
-                    *pdst = ~(psrc & ptar);
-                } else if (strcmp(opc, "nor") == 0) {
-                    *pdst = ~(psrc ^ ptar);
-                } else if (strcmp(opc, "not") == 0) {
-                    *pdst = ~psrc;
-                } else if (strcmp(opc, "let") == 0) {
-                    *pdst = psrc;
-                }
-            } else {
-                fprintf(stderr, "ASOP_CALC: Can't parse %s, Ignore.\n", op.para.str);
-            }
-            free(op.para.str);
-            break;
-        }
-
-        asops.pop_front();
-        if(is_delayslot) is_delayslot--;
-    }
-    return 0;
-}
-
 // 判断：是否为有分支延迟槽之指令（基于助记符）
 // 0 - not
 // 1 - j
@@ -578,19 +338,22 @@ int is_lbinst(char *nm)
     return 0;
 }
 
-int push_asop(char *asmb, unsigned long long now_vma)
+static int is_delayslot = 0;
+
+int mkasm(unsigned char *buf, char *asmb, unsigned long long now_vma)
 {
-    asop_t rlt;
-    rlt.optype = ASOP_ASM;
     str_trim_end(asmb);
     char mnemonic[64];
     sscanf(asmb, "%s", mnemonic);
     int type = is_lbinst(mnemonic);
-    if(type && type != 3)
+    if(type)
     {
         if(is_delayslot) return -5;
-        is_delayslot = 2;
-
+        if(type == 3)
+        {
+            is_delayslot = 2;
+            goto mkasm_nparse;
+        }
         char *lbl = str_last(asmb, ',');
         if(lbl == NULL) 
         {
@@ -599,15 +362,25 @@ int push_asop(char *asmb, unsigned long long now_vma)
         }
         lbl = str_first_not(lbl + 1, '\r');
         if(lbl == NULL) return -3;
-
-        if(lbl[0] >= '0' && lbl[0] <= '9') {
-            rlt.optype = ASOP_ASM;
-        } else {
-            rlt.optype = ASOP_ASM_IMM_TAG;
-            rlt.tag = strdup(lbl);
-            lbl[0] = '0';
-            lbl[1] = '\0'; // 赋予 as() 函数假值
+        for(int i = 0; i < tag_p; ++i)
+        {
+            if(0 == strcmp(tag_nm[i], lbl))
+            {
+                // if(type == 1)
+                    sprintf(lbl, "%llu", tag_vma[i]);
+                // else
+                //     sprintf(lbl, "%lld", (long long)tag_vma[i] - (long long)now_vma - 1);
+                is_delayslot = 2; // 每次返回前减一，由于跳转位于延迟槽的异常判断位于之前，这里可以设置
+                // 注解：即：本次返回减少1变为1，下一条位于延迟槽的指令方能正确判断。
+                // 注解：下一条延迟槽指令返回时减少1变为0，即恢复正常状态。
+                goto mkasm_nparse;
+            }
         }
+        if(lbl[0] >= '0' && lbl[0] <= '9') {
+            is_delayslot = 2;
+            goto mkasm_nparse;
+        }
+        return -4;
     }
     mkasm_nparse:
 
@@ -631,47 +404,76 @@ int push_asop(char *asmb, unsigned long long now_vma)
                 int low = tmp.imm & 0xffff;
                 tmp.opcode = LUI;
                 tmp.imm >>= 16;
-                if(low > 0x7fff) tmp.imm += 1; // use subtraction method
-                rlt.para.instr = tmp;
+                if(low > 0x7fff) tmp.imm += 1;
                 if(is_delayslot)
                 {
-                    auto jmp = asops.back();
-                    asops.pop_back();
-                    assert(jmp.optype == ASOP_ASM || jmp.optype == ASOP_ASM_IMM_TAG);
-                    if (jmp.para.instr.imm != -4) // point to itself, nothing need to be changed.
-                        jmp.para.instr.imm -= 4; // logged the offset, even the tag will used this
-                    
-                    asops.push_back(rlt);
-                    asops.push_back(jmp);
+                    *((unsigned int *)buf) = *((unsigned int *)buf - 1);
+                    auto tins = DecodeInstruction(*((unsigned int *)buf - 1));
+                    if(is_lbinst((char*)instructions[tins.opcode].name) == 2)
+                        tins.imm -= 1, *((unsigned int *)buf) = EncodeInstruction(tins);
+                        // puts("警告，延迟槽中可能有问题。");
+                    *((unsigned int *)buf - 1) = EncodeInstruction(tmp);
                 }
                 else
-                    asops.push_back(rlt);
-                    // *((unsigned int *)buf) = EncodeInstruction(tmp);
-                // buf += 4;
+                    *((unsigned int *)buf) = EncodeInstruction(tmp);
+                buf += 4;
                 tmp.opcode = ADDIU;
                 tmp.rs = tmp.rt;
                 tmp.imm = low > 0x7fff ? -(0x10000 - low) : low;
-                // *((unsigned int *)buf) = EncodeInstruction(tmp);
-                rlt.para.instr = tmp;
-                asops.push_back(rlt);
+                *((unsigned int *)buf) = EncodeInstruction(tmp);
+                if(is_delayslot) --is_delayslot;
+                return 8;
+            }
+            if((*(long long*)&tmp.imm) < -0x8000)
+            {
+                error(9501);
+                int low = tmp.imm & 0xffff;
                 if(is_delayslot) --is_delayslot;
                 return 8;
             }
             tmp.opcode = ADDIU;
             tmp.rs = 0;
-            rlt.para.instr = tmp;
-            asops.push_back(rlt);
+            *((unsigned int *)buf) = EncodeInstruction(tmp);
             if(is_delayslot) --is_delayslot;
             return 4;
         }
         else if(strcmp(mnemonic, "LA") == 0)
         {
-            rlt.optype = ASOP_LA;
-            rlt.para.str = strdup(asmb);
-            asops.push_back(rlt);
-
-            if(is_delayslot) --is_delayslot;
-            return 8;
+            char *lbl = str_first(asmb + 2, ',');
+            if(lbl == NULL) return -3;
+            lbl = str_first_not(lbl + 1, '\r');
+            if(lbl == NULL) return -3;
+            for(int i = 0; i < tag_p; ++i)
+            {
+                if(0 == strcmp(tag_nm[i], lbl))
+                {
+                    sprintf(lbl, "%llu", tag_vma[i]);
+                    parse_param(str_first_not(asmb + 2, '\r'), "$rt, #im", &ans);
+                    int low = ans.imm & 0xffff;
+                    ans.opcode = LUI;
+                    ans.imm >>= 16;
+                    if(low > 0x7fff) ans.imm += 1;
+                    if(is_delayslot)
+                    {
+                        *((unsigned int *)buf) = *((unsigned int *)buf - 1);
+                        auto tins = DecodeInstruction(*((unsigned int *)buf - 1));
+                        if(is_lbinst((char*)instructions[tins.opcode].name) == 2)
+                            tins.imm -= 1, *((unsigned int *)buf) = EncodeInstruction(tins);
+                            // puts("警告：延迟槽中可能有问题。");
+                        *((unsigned int *)buf - 1) = EncodeInstruction(ans);
+                    }
+                    else
+                        *((unsigned int *)buf) = EncodeInstruction(ans);
+                    buf += 4;
+                    ans.opcode = ADDIU;
+                    ans.rs = ans.rt;
+                    ans.imm = low > 0x7fff ? -(0x10000 - low) : low;
+                    *((unsigned int *)buf) = EncodeInstruction(ans);
+                    if(is_delayslot) --is_delayslot;
+                    return 8;
+                }
+            }
+            return -4;
         }
         else if (strcmp(mnemonic, "MOVE") == 0)
         {
@@ -679,8 +481,7 @@ int push_asop(char *asmb, unsigned long long now_vma)
             if (parse_param(para, "$rd, $rs", &ans) < 0) return -1;
             ans.opcode = move_only_word ? ADDU : DADDU;
             ans.rt = 0; // zero
-            rlt.para.instr = ans;
-            asops.push_back(rlt);
+            *((unsigned int *)buf) = EncodeInstruction(ans);
             if(is_delayslot) --is_delayslot;
             return 4;
         }
@@ -690,8 +491,7 @@ int push_asop(char *asmb, unsigned long long now_vma)
             if (parse_param(para, "$rd, $rs", &ans) < 0) return -1;
             ans.opcode = DADDU;
             ans.rt = 0; // zero
-            rlt.para.instr = ans;
-            asops.push_back(rlt);
+            *((unsigned int *)buf) = EncodeInstruction(ans);
             if(is_delayslot) --is_delayslot;
             return 4;
         }
@@ -700,40 +500,33 @@ int push_asop(char *asmb, unsigned long long now_vma)
             if (parse_param(str_first_not(asmb + 1, '\r'), "&im", &ans) < 0) return -1;
             ans.opcode = BEQ;
             ans.rs = ans.rt = 0; // zero (beq zero, zero, &im)
-            rlt.para.instr = ans;
-            asops.push_back(rlt);
+            *((unsigned int *)buf) = EncodeInstruction(ans);
             if(is_delayslot) --is_delayslot;
             return 4;
         }
     }
     else
     {
+        // if (ret) return ret;
         if(ret == -19)
             return -1000;
         if (ret) return -3;
 
-        rlt.para.instr = ans;
-        asops.push_back(rlt);
+        *((unsigned int *)buf) = EncodeInstruction(ans);
         if(is_delayslot) --is_delayslot;
         return 4;
     }
     return -3;
 }
 
-int genasm(unsigned char *buffer)
+int genasm(unsigned char *buffer, bool check_only)
 {
     static char linebuf[4096];
     unsigned long long now_loc = 0, galign = 0, warn_loc = ~0x0;
     long long offset = 0;
     int line = 0;
-    std::stack<FILE *> files;
-    files.push(script);
-    std::stack<std::string> filenm;
-    filenm.push(scriptnm);
-    std::stack<int> lineno;
-    // static char logic_filename[2048];
+    static char logic_filename[2048];
     int fsret = 0;
-    unsigned long long opseq_loc = 0;
     while (EOF != (fsret = fscanf(script, "%[^\n]", linebuf)))
     {
         int t = fgetc(script);
@@ -796,7 +589,7 @@ int genasm(unsigned char *buffer)
         if (flg)
             aerror(line, 3004, linebuf);
 
-        if (body != linebuf) // 有标签，要处理
+        if (check_only && body != linebuf) // 有标签，要处理
         {
             char *str = str_first_not(linebuf, '\r');
             int count;
@@ -815,7 +608,6 @@ int genasm(unsigned char *buffer)
         }
 
         // 常规指令字处理
-        asop_t op;
         if ((body = str_first_not(body, '\r')) == NULL)//空行
         {
             continue;
@@ -841,31 +633,29 @@ int genasm(unsigned char *buffer)
             {
                 WARN(4107);
             }
-            else if (0 == strcmp(cmd, "set")) {
-                char *tag = str_first_not(body + 4,'\r');
-                if (tag == NULL) {
-                    ERROR(4131);
-                }
-                int cnt = get_term(tag_nm[tag_p], tag, '=');
-                str_trim_end(tag_nm[tag_p]);
-                sscanf(tag + cnt + 1, "%llu", &tag_vma[tag_p]);
-                tag_loc[tag_p] = tag_vma[tag_p++] - offset;
-            }
-            // else if (0 == strcmp(cmd, "calc")) {
-            //     op.optype = ASOP_CALC;
-            //     op.para.str = strdup(body + 5);
-            //     asops.push_back(op);
-            // }
-            else if (0 == strcmp(cmd, "byte")) // imm, asop ignore
+            else if (0 == strcmp(cmd, "byte"))
             {
+                if(check_only) 
+                {
+                    now_loc += 1;
+                    continue;
+                }
+
                 if(0 >= parse_int(&tmp.i64, body + 5))
                     ERROR(4130);
                 if(tmp.u64 >= 0xff) WARN(4109);
                 *(buffer + now_loc) = tmp.u8;
                 now_loc += 1;
             }
-            else if (0 == strcmp(cmd, "half")) // imm, asop ignore
+            else if (0 == strcmp(cmd, "half"))
             {
+                if(check_only) 
+                {
+                    now_loc += 2;
+                    continue;
+                }
+
+                if(check_only) continue;
                 if(0 >= parse_int(&tmp.i64, body + 5))
                     ERROR(4130);
                 if(tmp.u64 >= 0xffff) WARN(4109);
@@ -874,32 +664,48 @@ int genasm(unsigned char *buffer)
             }
             else if (0 == strcmp(cmd, "word"))
             {
-                int ret = parse_int(&tmp.i64, body + 5);
-                if(ret == -1)
+                if(check_only) 
                 {
-                    char *sta = str_first_not(body + 5, '\r');
-                    if(sta == NULL)
-                        ERROR(4131);
+                    now_loc += 4;
+                    continue;
+                }
 
-                    if (opseq_loc != now_loc) {
-                        op.optype = ASOP_SET_ADDR;
-                        op.para.u64 = now_loc;
-                        asops.push_back(op);
+                if(check_only) continue;
+                int ret = parse_int(&tmp.i64, body + 5);
+                if(0 >= ret)
+                {
+                    if(ret == -1)
+                    {
+                        char *sta = str_first_not(body + 5, '\r');
+                        if(sta == NULL)
+                            ERROR(4131);
+                        for(int i = 0; i < tag_p; ++i)
+                        {
+                            if(0 == strcmp(sta, tag_nm[i]))
+                            {
+                                tmp.u32 = (unsigned int)tag_vma[i];
+                                goto ga_normrot;
+                            }
+                        }
+                        ERROR(4132);
                     }
-                    op.optype = ASOP_DEF_WORD_TAG;
-                    op.tag = strdup(sta);
-                    asops.push_back(op);
-                    now_loc += 4;
-                    opseq_loc = now_loc;
+                    else
+                        ERROR(4130);
                 }
-                else {
-                    if(tmp.u64 >= 0xffffffff) WARN(4109);
-                    *((unsigned int *)(buffer + now_loc)) = tmp.u32;
-                    now_loc += 4;
-                }
+                ga_normrot:
+                if(tmp.u64 >= 0xffffffff) WARN(4109);
+                *((unsigned int *)(buffer + now_loc)) = tmp.u32;
+                now_loc += 4;
             }
             else if (0 == strcmp(cmd, "dword"))
             {
+                if(check_only) 
+                {
+                    now_loc += 8;
+                    continue;
+                }
+
+                if(check_only) continue;
                 if(0 >= parse_int(&tmp.i64, body + 5))
                     ERROR(4130);
                 *((unsigned long long *)(buffer + now_loc)) = tmp.u64;
@@ -930,6 +736,13 @@ int genasm(unsigned char *buffer)
                     {
                         if (*++sta == 'x')
                         {
+                            if(check_only)
+                            {
+                                sta += 2;
+                                now_loc += 1;
+                                continue;
+                            }
+
                             char a = *++sta;
                             char b = *++sta;
                             if(a >= 'a' && a <= 'f') a = a - 'a' + 'A';
@@ -938,18 +751,42 @@ int genasm(unsigned char *buffer)
                         }
                         if(*sta == 'n')
                         {
+                            if(check_only)
+                            {
+                                now_loc += 1;
+                                continue;
+                            }
+
                             *(buffer + now_loc++) = '\n';
                         }
                         if(*sta == '\\')
                         {
+                            if(check_only)
+                            {
+                                now_loc += 1;
+                                continue;
+                            }
+
                             *(buffer + now_loc++) = '\\';
                         }
                         if(*sta == 'r')
                         {
+                            if(check_only)
+                            {
+                                now_loc += 1;
+                                continue;
+                            }
+
                             *(buffer + now_loc++) = '\r';
                         }
                         if(*sta == '0')
                         {
+                            if(check_only)
+                            {
+                                now_loc += 1;
+                                continue;
+                            }
+
                             *(buffer + now_loc++) = '\0';
                         }
                         ++sta;
@@ -958,7 +795,10 @@ int genasm(unsigned char *buffer)
                     if (*sta == '"')
                         break;
                     
-                    *(buffer + now_loc++) = *sta++;
+                    if(check_only)
+                        now_loc += 1;
+                    else
+                        *(buffer + now_loc++) = *sta++;
                     continue;
                 }
                 if (*sta == '\0')
@@ -978,6 +818,13 @@ int genasm(unsigned char *buffer)
                     {
                         if (*++sta == 'x')
                         {
+                            if(check_only)
+                            {
+                                sta += 2;
+                                now_loc += 1;
+                                continue;
+                            }
+
                             char a = *++sta;
                             char b = *++sta;
                             if(a >= 'a' && a <= 'f') a = a - 'a' + 'A';
@@ -990,18 +837,42 @@ int genasm(unsigned char *buffer)
                         }
                         if(*sta == 'n')
                         {
+                            if(check_only)
+                            {
+                                now_loc += 1;
+                                continue;
+                            }
+
                             *(buffer + now_loc++) = '\n';
                         }
                         if(*sta == '\\')
                         {
+                            if(check_only)
+                            {
+                                now_loc += 1;
+                                continue;
+                            }
+
                             *(buffer + now_loc++) = '\\';
                         }
                         if(*sta == 'r')
                         {
+                            if(check_only)
+                            {
+                                now_loc += 1;
+                                continue;
+                            }
+
                             *(buffer + now_loc++) = '\r';
                         }
                         if(*sta == '0')
                         {
+                            if(check_only)
+                            {
+                                now_loc += 1;
+                                continue;
+                            }
+
                             *(buffer + now_loc++) = '\0';
                         }
                         ++sta;
@@ -1010,13 +881,24 @@ int genasm(unsigned char *buffer)
                     if (*sta == '"')
                         break;
 
-                    *(buffer + now_loc++) = *sta++;
+                    if (check_only)
+                    {
+                        now_loc += 1;
+                        sta += 1;
+                    }
+                    else
+                        *(buffer + now_loc++) = *sta++;
                     continue;
                 }
                 if (*sta == '\0')
                     aerror(line, 4101, linebuf);
                 
-                *(buffer + now_loc++) = '\0';
+                if (check_only)
+                {
+                    now_loc += 1;
+                }
+                else
+                    *(buffer + now_loc++) = '\0';
                 now_loc = (now_loc + galign) & ~galign;
             }
             else if (0 == strcmp(cmd, "galign"))
@@ -1033,9 +915,6 @@ int genasm(unsigned char *buffer)
             {
                 if (sscanf(body + 7, "%llX", &offset) != 1)
                     aerror(line, 4104, linebuf);
-                op.optype = ASOP_SET_OFFSET;
-                op.para.u64 = offset;
-                asops.push_back(op);
             }
             else if (0 == strcmp(cmd, "loc"))
             {
@@ -1050,17 +929,11 @@ int genasm(unsigned char *buffer)
                 {
                     now_loc = tmp1;
                     warn_loc = ~0x0;
-                    // op.optype = ASOP_SET_ADDR;
-                    // op.para.u64 = now_loc;
-                    // asops.push_back(op);
                 }
                 else if (rst == 2)
                 {
                     now_loc = tmp1;
                     warn_loc = tmp2;
-                    op.optype = ASOP_SET_ADDR;
-                    op.para.u64 = now_loc;
-                    asops.push_back(op);
                 }
                 else
                 {
@@ -1083,9 +956,6 @@ int genasm(unsigned char *buffer)
                 {
                     now_loc = tmp1;
                     warn_loc = tmp1 + tmp2;
-                    // op.optype = ASOP_SET_ADDR;
-                    // op.para.u64 = now_loc;
-                    // asops.push_back(op);
                 }
             }
             else if (0 == strcmp(cmd, "vma"))
@@ -1111,9 +981,6 @@ int genasm(unsigned char *buffer)
                 {
                     aerror(line, 4108, linebuf);
                 }
-                // op.optype = ASOP_SET_ADDR;
-                // op.para.u64 = now_loc;
-                // asops.push_back(op);
             }
             else if (0 == strcmp(cmd, "file"))
             {
@@ -1135,13 +1002,16 @@ int genasm(unsigned char *buffer)
 
         else
         {
+            if (check_only)
             {
-                if(opseq_loc != now_loc) {
-                    op.optype = ASOP_SET_ADDR;
-                    op.para.u64 = now_loc;
-                    asops.push_back(op);
-                }
-                int ret = push_asop(body, now_loc + offset);
+                int len = get_asm_len(body);
+                if(len == -1) aerror(line, 3200, linebuf);
+                else now_loc += len;
+            }
+
+            else
+            {
+                int ret = mkasm(buffer + now_loc, body, now_loc + offset);
                 if(ret == -1) aerror(line, 8000, linebuf);
                 else if(ret == -2) aerror(line, 8001, linebuf);
                 else if(ret == -3) aerror(line, 8002, linebuf);
@@ -1149,7 +1019,6 @@ int genasm(unsigned char *buffer)
                 else if(ret == -5) aerror(line, 4203, linebuf);
                 else if(ret == -1000) aerror(line, 4200, linebuf);
                 else now_loc += ret;
-                opseq_loc = now_loc;
             }
         }
     }
