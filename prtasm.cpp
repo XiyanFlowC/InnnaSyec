@@ -55,7 +55,7 @@ void warn(int code);
 void fatal(int code);
 void info(int code);
 //int check();
-int genasm(unsigned char *buffer, bool check_only = false);
+int genasm(unsigned char *buffer, long long buffer_size, bool check_only = false);
 
 int main(int argc, const char **argv)
 {
@@ -222,8 +222,8 @@ int main(int argc, const char **argv)
             fatal(2002);
         if (script == NULL)
             fatal(2003);
-        if (0 == genasm(buf, true))
-            genasm(buf);
+        if (0 == genasm(buf, len, true))
+            genasm(buf, len);
 
         if(!cerror)
             fwrite(buf, len, 1, output);
@@ -332,9 +332,10 @@ static int tag_p = 0;
 int is_lbinst(char *nm)
 {
     strupr(nm);
+    if(nm[0] == 'J' && nm[1] == 'A' && nm[3] == 'R') return 3; // jalr
     if(nm[0] == 'J' && nm[1] != 'R') return 1; // r for jr
     if(nm[0] == 'B' && nm[1] != 'R') return 2; // r for break
-    if(nm[0] == 'J' && nm[1] == 'R') return 3; // jr - not relate to the addr
+    if(nm[0] == 'J' && nm[1] == 'R') return 3; // jr - not relate to the lbl
     return 0;
 }
 
@@ -426,8 +427,26 @@ int mkasm(unsigned char *buf, char *asmb, unsigned long long now_vma)
             }
             if((*(long long*)&tmp.imm) < -0x8000)
             {
-                error(9501);
                 int low = tmp.imm & 0xffff;
+                int high = (tmp.imm >> 16) & 0xffff;
+                tmp.opcode = LUI;
+                tmp.imm = high;
+                if(is_delayslot)
+                {
+                    *((unsigned int *)buf) = *((unsigned int *)buf - 1);
+                    auto tins = DecodeInstruction(*((unsigned int *)buf - 1));
+                    if(is_lbinst((char*)instructions[tins.opcode].name) == 2)
+                        tins.imm -= 1, *((unsigned int *)buf) = EncodeInstruction(tins);
+                        // puts("警告，延迟槽中可能有问题。");
+                    *((unsigned int *)buf - 1) = EncodeInstruction(tmp);
+                }
+                else
+                    *((unsigned int *)buf) = EncodeInstruction(tmp);
+                buf += 4;
+                tmp.opcode = ORI;
+                tmp.rs = tmp.rt;
+                tmp.imm = low;
+                *((unsigned int *)buf) = EncodeInstruction(tmp);
                 if(is_delayslot) --is_delayslot;
                 return 8;
             }
@@ -519,7 +538,7 @@ int mkasm(unsigned char *buf, char *asmb, unsigned long long now_vma)
     return -3;
 }
 
-int genasm(unsigned char *buffer, bool check_only)
+int genasm(unsigned char *buffer, long long buffer_size, bool check_only)
 {
     static char linebuf[4096];
     unsigned long long now_loc = 0, galign = 0, warn_loc = ~0x0;
@@ -644,6 +663,7 @@ int genasm(unsigned char *buffer, bool check_only)
                 if(0 >= parse_int(&tmp.i64, body + 5))
                     ERROR(4130);
                 if(tmp.u64 >= 0xff) WARN(4109);
+                if (now_loc >= buffer_size) FATAL(7000);
                 *(buffer + now_loc) = tmp.u8;
                 now_loc += 1;
             }
@@ -659,6 +679,7 @@ int genasm(unsigned char *buffer, bool check_only)
                 if(0 >= parse_int(&tmp.i64, body + 5))
                     ERROR(4130);
                 if(tmp.u64 >= 0xffff) WARN(4109);
+                if (now_loc >= buffer_size) FATAL(7000);
                 *((unsigned short *)(buffer + now_loc)) = tmp.u16;
                 now_loc += 2;
             }
@@ -694,6 +715,7 @@ int genasm(unsigned char *buffer, bool check_only)
                 }
                 ga_normrot:
                 if(tmp.u64 >= 0xffffffff) WARN(4109);
+                if (now_loc >= buffer_size) FATAL(7000);
                 *((unsigned int *)(buffer + now_loc)) = tmp.u32;
                 now_loc += 4;
             }
@@ -708,6 +730,7 @@ int genasm(unsigned char *buffer, bool check_only)
                 if(check_only) continue;
                 if(0 >= parse_int(&tmp.i64, body + 5))
                     ERROR(4130);
+                if (now_loc >= buffer_size) FATAL(7000);
                 *((unsigned long long *)(buffer + now_loc)) = tmp.u64;
                 now_loc += 8;
             }
@@ -747,6 +770,12 @@ int genasm(unsigned char *buffer, bool check_only)
                             char b = *++sta;
                             if(a >= 'a' && a <= 'f') a = a - 'a' + 'A';
                             if(b >= 'a' && b <= 'f') b = b - 'a' + 'A';
+                            if(a >= 'A' && a <= 'F') a = a - 'A' + 10;
+                            else a -= '0';
+                            if(b >= 'A' && b <= 'F') b = b - 'A' + 10;
+                            else b -= '0';
+
+                            if (now_loc >= buffer_size) FATAL(7000);
                             *(buffer + now_loc++) = (a<<4) | b;
                         }
                         if(*sta == 'n')
@@ -757,6 +786,7 @@ int genasm(unsigned char *buffer, bool check_only)
                                 continue;
                             }
 
+                            if (now_loc >= buffer_size) FATAL(7000);
                             *(buffer + now_loc++) = '\n';
                         }
                         if(*sta == '\\')
@@ -767,6 +797,7 @@ int genasm(unsigned char *buffer, bool check_only)
                                 continue;
                             }
 
+                            if (now_loc >= buffer_size) FATAL(7000);
                             *(buffer + now_loc++) = '\\';
                         }
                         if(*sta == 'r')
@@ -777,6 +808,7 @@ int genasm(unsigned char *buffer, bool check_only)
                                 continue;
                             }
 
+                            if (now_loc >= buffer_size) FATAL(7000);
                             *(buffer + now_loc++) = '\r';
                         }
                         if(*sta == '0')
@@ -787,6 +819,7 @@ int genasm(unsigned char *buffer, bool check_only)
                                 continue;
                             }
 
+                            if (now_loc >= buffer_size) FATAL(7000);
                             *(buffer + now_loc++) = '\0';
                         }
                         ++sta;
@@ -797,8 +830,10 @@ int genasm(unsigned char *buffer, bool check_only)
                     
                     if(check_only)
                         now_loc += 1;
-                    else
+                    else {
+                        if (now_loc >= buffer_size) FATAL(7000);
                         *(buffer + now_loc++) = *sta++;
+                    }
                     continue;
                 }
                 if (*sta == '\0')
@@ -833,6 +868,8 @@ int genasm(unsigned char *buffer, bool check_only)
                             else a -= '0';
                             if(b >= 'A' && b <= 'F') b = b - 'A' + 10;
                             else b -= '0';
+
+                            if (now_loc >= buffer_size) FATAL(7000);
                             *(buffer + now_loc++) = (a<<4) | b;
                         }
                         if(*sta == 'n')
@@ -843,6 +880,7 @@ int genasm(unsigned char *buffer, bool check_only)
                                 continue;
                             }
 
+                            if (now_loc >= buffer_size) FATAL(7000);
                             *(buffer + now_loc++) = '\n';
                         }
                         if(*sta == '\\')
@@ -853,6 +891,7 @@ int genasm(unsigned char *buffer, bool check_only)
                                 continue;
                             }
 
+                            if (now_loc >= buffer_size) FATAL(7000);
                             *(buffer + now_loc++) = '\\';
                         }
                         if(*sta == 'r')
@@ -863,6 +902,7 @@ int genasm(unsigned char *buffer, bool check_only)
                                 continue;
                             }
 
+                            if (now_loc >= buffer_size) FATAL(7000);
                             *(buffer + now_loc++) = '\r';
                         }
                         if(*sta == '0')
@@ -873,6 +913,7 @@ int genasm(unsigned char *buffer, bool check_only)
                                 continue;
                             }
 
+                            if (now_loc >= buffer_size) FATAL(7000);
                             *(buffer + now_loc++) = '\0';
                         }
                         ++sta;
@@ -886,8 +927,10 @@ int genasm(unsigned char *buffer, bool check_only)
                         now_loc += 1;
                         sta += 1;
                     }
-                    else
+                    else {
+                        if (now_loc >= buffer_size) FATAL(7000);
                         *(buffer + now_loc++) = *sta++;
+                    }
                     continue;
                 }
                 if (*sta == '\0')
@@ -897,8 +940,10 @@ int genasm(unsigned char *buffer, bool check_only)
                 {
                     now_loc += 1;
                 }
-                else
+                else {
+                    if (now_loc >= buffer_size) FATAL(7000);
                     *(buffer + now_loc++) = '\0';
+                }
                 now_loc = (now_loc + galign) & ~galign;
             }
             else if (0 == strcmp(cmd, "galign"))
@@ -993,6 +1038,7 @@ int genasm(unsigned char *buffer, bool check_only)
                 {
                     aerror(line, 4111, linebuf);
                 }
+                else line -= 1;
             }
             else
             {
@@ -1011,6 +1057,7 @@ int genasm(unsigned char *buffer, bool check_only)
 
             else
             {
+                if (now_loc >= buffer_size) FATAL(7000);
                 int ret = mkasm(buffer + now_loc, body, now_loc + offset);
                 if(ret == -1) aerror(line, 8000, linebuf);
                 else if(ret == -2) aerror(line, 8001, linebuf);
@@ -1203,10 +1250,11 @@ static struct err_t
     {4203, "二次解析时发现异常。分支延迟槽中的跳转指令。"},
     {4900, "二次解析时发生异常。容纳块溢出。"},
     {4910, "二次解析时发现异常。换行符未能取得LF。检查文件格式或操作系统。"},
+    {7000, "缓冲区错误。写错误：指定的地址超过了文件大小或所分配的缓冲区。"},
     {8000, "无效汇编指令。"},
     {8001, "未知寄存器名。"},
     {8002, "命令语法不正确。"},
-    {9001, "处理LI指令时，所给数值超过阈限。"},
+    {9001, "处理LI指令时，所给数值超过可处理的极限。"},
     {9501, "LI伪指令对负数情况未实现。"},
     {9505, ".qword（128位数定义）功能未实现。"},
     {9999, "索引未命中。"}};

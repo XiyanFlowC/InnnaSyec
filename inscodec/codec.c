@@ -264,7 +264,7 @@ static int C0OpcodeLookUpTable[] =
 {
 	RESERVED, TLBR, TLBWI, RESERVED, RESERVED, RESERVED, TLBWR, RESERVED,
 	TLBP, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED,
-	EI, DI, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED, /* May EI & DI located here... */
+	RESERVED, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED, /* May EI & DI located here... */
 	ERET, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED,
 	RESERVED, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED,
 	RESERVED, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED, RESERVED,
@@ -411,9 +411,9 @@ struct instr_t DecodeInstruction(unsigned int instruction)
 	}
 	else if (def->type == IT_regf)
 	{
-		ans.rd = anyl.rtype.sa;
+		ans.sa = anyl.rtype.sa;
 		ans.rt = anyl.rtype.rt;
-		ans.rs = anyl.rtype.rd;
+		ans.rd = anyl.rtype.rd;
 	}
 	else ans.opcode = -1;
 	return ans;
@@ -731,7 +731,7 @@ void PrepareC0(union uinstr instr)
 	for (int i = 0; i < 64; ++i)
 	{
 		if (C0OpcodeLookUpTable[i] == RESERVED) continue;
-		instr.rtype.rt = i;
+		instr.rtype.funct = i;
 		opcode_buffer[C0OpcodeLookUpTable[i]] = instr.code;
 	}
 }
@@ -931,7 +931,7 @@ int LookUpBC0(union uinstr instr)
 
 int LookUpC0(union uinstr instr)
 {
-	return C0OpcodeLookUpTable[instr.rtype.rs];
+	return C0OpcodeLookUpTable[instr.rtype.funct];
 }
 
 int LookUpCOP1(union uinstr instr)
@@ -1022,7 +1022,7 @@ struct instr_def instructions[] = {
 	{IT_reg, "DSUBU", "$rd, $rs, $rt"},
 	{IT_jump, "J", "*im"},
 	{IT_jump, "JAL", "*im"},
-	{IT_reg, "JALR", "$rs, $rd"},
+	{IT_reg, "JALR", "$rd, $rs"},
 	{IT_reg, "JR", "$rs"},
 	{IT_imm, "LB", "$rt, #im($rs)"},
 	{IT_imm, "LBU", "$rt, #im($rs)"},
@@ -1055,16 +1055,16 @@ struct instr_def instructions[] = {
 	{IT_imm, "SH", "$rt, #im($rs)"},
 	{IT_reg, "SLL", "$rd, $rt, %sa"},
 	{IT_reg, "SLLV", "$rd, $rt, $rs"},
-	{IT_reg, "SLT", "$rd, $rt, $rs"},
+	{IT_reg, "SLT", "$rd, $rs, $rt"},
 	{IT_imm, "SLTI", "$rt, $rs, #im"},
 	{IT_immu, "SLTIU", "$rt, $rs, %im"},
-	{IT_reg, "SLTU", "$rd, $rt, $rs"},
+	{IT_reg, "SLTU", "$rd, $rs, $rt"},
 	{IT_reg, "SRA", "$rd, $rt, %sa"},
 	{IT_reg, "SRAV", "$rd, $rt, $rs"},
 	{IT_reg, "SRL", "$rd, $rt, %sa"},
 	{IT_reg, "SRLV", "$rd, $rt, $rs"},
-	{IT_reg, "SUB", "$rd, $rt, $rs"},
-	{IT_reg, "SUBU", "$rd, $rt, $rs"},
+	{IT_reg, "SUB", "$rd, $rs, $rt"},
+	{IT_reg, "SUBU", "$rd, $rs, $rt"},
 	{IT_imm, "SW", "$rt, #im($rs)"},
 	{IT_imm, "SWL", "$rt, #im($rs)"},
 	{IT_imm, "SWR", "$rt, #im($rs)"},
@@ -1083,7 +1083,7 @@ struct instr_def instructions[] = {
 	{IT_reg, "TNE", "$rs, $rt"},
 	{IT_imm, "TNEI", "$rs, #im"},
 	{IT_reg, "XOR", "$rd, $rs, $rt"},
-	{IT_immu, "XORI", "$rs, $rt, %im"},
+	{IT_immu, "XORI", "$rt, $rs, %im"},
 	{IT_reg, "DIV1", "$rs, $rt"},
 	{IT_reg, "DIVU1", "$rs, $rt"},
 	{IT_imm, "LQ", "$rt, #im($rs)"},
@@ -1172,15 +1172,15 @@ struct instr_def instructions[] = {
 	{IT_reg, "PPACW", "$rd, $rs, $rt"},
 	{IT_reg, "PREVH", "$rd, $rt"},
 	{IT_reg, "PROT3W", "$rd, $rt"},
-	{IT_reg, "PSLLH", "$rs, $rt, %sa"},
-	{IT_reg, "PSLLVW", "$rd, $rs, $rt"},
-	{IT_reg, "PSLLW", "$rs, $rt, %sa"},
-	{IT_reg, "PSRAH", "$rs, $rt, %sa"},
-	{IT_reg, "PSRAVW", "$rd, $rs, $rt"},
-	{IT_reg, "PSRAW", "$rs, $rt, %sa"},
-	{IT_reg, "PSRLH", "$rs, $rt, %sa"},
-	{IT_reg, "PSRLVW", "$rd, $rs, $rt"},
-	{IT_reg, "PSRLW", "$rs, $rt, %sa"},
+	{IT_reg, "PSLLH", "$rd, $rt, %sa"},
+	{IT_reg, "PSLLVW", "$rd, $rt, $rs"},
+	{IT_reg, "PSLLW", "$rd, $rt, %sa"},
+	{IT_reg, "PSRAH", "$rd, $rt, %sa"},
+	{IT_reg, "PSRAVW", "$rd, $rt, $rs"},
+	{IT_reg, "PSRAW", "$rd, $rt, %sa"},
+	{IT_reg, "PSRLH", "$rd, $rt, %sa"},
+	{IT_reg, "PSRLVW", "$rd, $rt, $rs"},
+	{IT_reg, "PSRLW", "$rd, $rt, %sa"},
 	{IT_reg, "PSUBB", "$rd, $rs, $rt"},
 	{IT_reg, "PSUBH", "$rd, $rs, $rt"},
 	{IT_reg, "PSUBSB", "$rd, $rs, $rt"},

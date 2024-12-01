@@ -5,3 +5,4 @@
 simpgen
 prtasm
 sqlite3/*
+out/*

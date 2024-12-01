@@ -19,8 +19,8 @@
 extern "C"
 {
 #endif
-// èŽ·å–ç¬¬ä¸€ä¸ªéžæŒ‡å®šçš„chçš„å­—ç¬¦ä½ç½®
-// åŒæ—¶è¿‡æ»¤ç©ºç™½å­—ç¬¦ï¼ˆ' ', '\\n', '\\t'ï¼‰
+// »ñÈ¡µÚÒ»¸ö·ÇÖ¸¶¨µÄchµÄ×Ö·ûÎ»ÖÃ
+// Í¬Ê±¹ýÂË¿Õ°××Ö·û£¨' ', '\\n', '\\t'£©
 static char *str_first_not(const char *src, const char ch)
 {
     while (*src != '\0' && (*src == ' ' || *src == '\n' || *src == '\t' || *src == ch))
@@ -41,7 +41,7 @@ static char *str_trim_end(char *src)
 	return ret;
 }
 
-// èŽ·å–ç¬¬ä¸€ä¸ªæŒ‡å®šçš„chçš„å­—ç¬¦ä½ç½®
+// »ñÈ¡µÚÒ»¸öÖ¸¶¨µÄchµÄ×Ö·ûÎ»ÖÃ
 static char * str_first(const char *src, const char ch)
 {
     while (*src != '\0' && *src != ch)
@@ -51,7 +51,7 @@ static char * str_first(const char *src, const char ch)
     return (char *)src;
 }
 
-// èŽ·å–æœ€åŽä¸€ä¸ªæŒ‡å®šçš„chçš„å­—ç¬¦ä½ç½®
+// »ñÈ¡×îºóÒ»¸öÖ¸¶¨µÄchµÄ×Ö·ûÎ»ÖÃ
 static char *str_last(const char *src, const char ch)
 {
     const char *end = src;
@@ -64,9 +64,9 @@ static char *str_last(const char *src, const char ch)
 }
 
 
-// èŽ·å–ä¸€ä¸ªé¡¹ï¼Œé‡åˆ°ç¬¬ä¸€ä¸ªç©ºç™½å­—ç¬¦æˆ–è¡Œæœ«æ—¶ç»ˆæ­¢
-// èŽ·å–åˆ°çš„é¡¹å­˜å…¥dstä¸­ï¼Œå‡è®¾srcå·²ç»ä½äºŽé¡¹çš„èµ·å§‹å¤„
-// è¿”å›žå€¼ï¼šæˆåŠŸå–å¾—çš„å­—ç¬¦ä¸ªæ•°
+// »ñÈ¡Ò»¸öÏî£¬Óöµ½µÚÒ»¸ö¿Õ°××Ö·û»òÐÐÄ©Ê±ÖÕÖ¹
+// »ñÈ¡µ½µÄÏî´æÈëdstÖÐ£¬¼ÙÉèsrcÒÑ¾­Î»ÓÚÏîµÄÆðÊ¼´¦
+// ·µ»ØÖµ£º³É¹¦È¡µÃµÄ×Ö·û¸öÊý
 static int get_term2(char *dst, const char *src)
 {
     int i = 0;
@@ -79,8 +79,8 @@ static int get_term2(char *dst, const char *src)
     return i;
 }
 
-// èŽ·å–ä¸€ä¸ªä»¥ end_ch ç»“å°¾çš„é¡¹åˆ° dst, endch è‡ªèº«ä¸åŒ…å«åœ¨ç»“æžœä¸­
-// è¿”å›žå€¼ï¼šæˆåŠŸèŽ·å–çš„å­—ç¬¦ä¸ªæ•°
+// »ñÈ¡Ò»¸öÒÔ end_ch ½áÎ²µÄÏîµ½ dst, endch ×ÔÉí²»°üº¬ÔÚ½á¹ûÖÐ
+// ·µ»ØÖµ£º³É¹¦»ñÈ¡µÄ×Ö·û¸öÊý
 static int get_term(char *dst, const char *src, const char end_ch)
 {
 	int i = 0;
@@ -93,8 +93,8 @@ static int get_term(char *dst, const char *src, const char end_ch)
 	return i;
 }
 
-// è®¡ç®—ä¸€ä¸ªä»¥end_chç»“å°¾çš„é¡¹çš„é•¿åº¦
-// è¿”å›žå€¼ï¼šæˆåŠŸèŽ·å–çš„å­—ç¬¦ä¸ªæ•°
+// ¼ÆËãÒ»¸öÒÔend_ch½áÎ²µÄÏîµÄ³¤¶È
+// ·µ»ØÖµ£º³É¹¦»ñÈ¡µÄ×Ö·û¸öÊý
 static int count_term(const char *src, const char end_ch)
 {
 	int i = 0;
@@ -156,9 +156,9 @@ static int output_int(char *buffer, long long value, int is_unsigned) {
 	return write_uint(buffer, value);
 }
 
-// è§£æžæ•´åž‹
-// å…è®¸0xã€0å‰ç¼€è¡¨ç¤ºçš„16è¿›åˆ¶åŠ8è¿›åˆ¶è§£æžã€‚å…è®¸è´Ÿå·å‰ç¼€ã€‚
-// è¿”å›žæˆåŠŸå¤„ç†çš„å­—ç¬¦ä¸ªæ•°ï¼Œæ•°å­—æ ¼å¼é”™è¯¯è¿”å›ž-1
+// ½âÎöÕûÐÍ
+// ÔÊÐí0x¡¢0Ç°×º±íÊ¾µÄ16½øÖÆ¼°8½øÖÆ½âÎö¡£ÔÊÐí¸ººÅÇ°×º¡£
+// ·µ»Ø³É¹¦´¦ÀíµÄ×Ö·û¸öÊý£¬Êý×Ö¸ñÊ½´íÎó·µ»Ø-1
 static int parse_int(long long *result, const char *src)
 {
 	src = str_first_not(src, '\r');
@@ -196,7 +196,7 @@ static int parse_int(long long *result, const char *src)
 			*result *= m;
 			return i;
 		}
-		return 1; // åè¿›åˆ¶çš„å•ä¸ªâ€˜0â€™
+		return 1; // Ê®½øÖÆµÄµ¥¸ö¡®0¡¯
 	}
 	else if (*src >= '0' && *src <= '9')
 	{
@@ -210,7 +210,7 @@ static int parse_int(long long *result, const char *src)
 	}
 	return -1;
 }
-
+#ifndef _WIN32
 static char *strupr(char *str)
 {
 	char *ret = str;
@@ -240,6 +240,7 @@ static char *strlwr(char *str)
 	}
 	return ret;
 }
+#endif
 
 #ifdef __cplusplus
 }

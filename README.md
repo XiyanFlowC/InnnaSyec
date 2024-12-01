@@ -18,32 +18,9 @@ make all
 
 如果是Windows，请继续阅读。
 
-首先构建simpgen：
-```bash
-cl simpgen.cpp /utf-8 /O2 # Windows
-g++ simpgen.cpp -o simpgen -O2 # Linux
-```
-
-Then, you should build mips5900 description include files.
-
-然后用simpgen生成嵌入文件。
-```bash
-simpgen -i mips5900.cpp -o mips5900
-```
-
-After that, you can compile the program:
-
-然后构建项目。
+构建项目。
 ```batch
-cl r5900.cpp /c /O2 /utf-8
-cl prtasm.cpp /c /O2 /utf-8
-link prtasm.obj r5900.obj
-```
-or...
-
-或者……
-```bash
-g++ r5900.cpp prtasm.cpp -o prtasm
+cl prtasm.cpp inscodec/codec.c inscodec/disas.c  /O2 /utf-8
 ```
 
 If you need help, just use:
@@ -93,3 +70,9 @@ str_00:
 jr      ra
 move    v0, zero
 ```
+
+## MISC
+
+那堆其他文件是什么？
+
+答：没写完的分析器（）不要管。只需要inscodec 和prtasm就好。之后可能移动到单独仓库。

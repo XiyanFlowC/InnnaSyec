@@ -41,6 +41,8 @@ int _get_target_(const char *str) {
         if(str[1] == 's') return 4;
         if(str[1] == 'd') return 2;
     }
+
+    abort();
 }
 
 int disas(struct instr_t instr, unsigned int offset, char *buffer) {

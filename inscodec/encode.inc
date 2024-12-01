@@ -19,7 +19,7 @@ break;
 case AND:
 ans.rtype.rd = instruction.rd;
 ans.rtype.rs = instruction.rs;
-ans.rtype.rd = instruction.rd;
+ans.rtype.rt = instruction.rt;
 break;
 case ANDI:
 ans.rtype.rt = instruction.rt;
@@ -993,22 +993,15 @@ case TLBWI:
 break;
 case TLBWR:
 break;
-case ABS_S:
-ans.rtype.rd = instruction.sa;
-ans.rtype.rs = instruction.rd;
-break;
 case ABS_D:
-ans.rtype.rd = instruction.sa;
-ans.rtype.rs = instruction.rd;
+case ABS_S:
+ans.rtype.sa = instruction.sa;
+ans.rtype.rd = instruction.rd;
 break;
 case ADD_S:
-ans.rtype.rd = instruction.sa;
-ans.rtype.rs = instruction.rd;
-ans.rtype.rt = instruction.rt;
-break;
 case ADD_D:
-ans.rtype.rd = instruction.sa;
-ans.rtype.rs = instruction.rd;
+ans.rtype.sa = instruction.sa;
+ans.rtype.rd = instruction.rd;
 ans.rtype.rt = instruction.rt;
 break;
 case BC1F:
@@ -1016,148 +1009,118 @@ ans.itype.imm = (instruction.imm >> 2) & 0xFFFF;break;
 case BC1T:
 ans.itype.imm = (instruction.imm >> 2) & 0xFFFF;break;
 case C_F_S:
-ans.rtype.rs = instruction.rd;
+ans.rtype.rd = instruction.rd;
 ans.rtype.rt = instruction.rt;
 break;
 case C_F_D:
-ans.rtype.rs = instruction.rd;
+ans.rtype.rd = instruction.rd;
 ans.rtype.rt = instruction.rt;
 break;
 case C_UN_S:
-ans.rtype.rs = instruction.rd;
+ans.rtype.rd = instruction.rd;
 ans.rtype.rt = instruction.rt;
 break;
 case C_UN_D:
-ans.rtype.rs = instruction.rd;
+ans.rtype.rd = instruction.rd;
 ans.rtype.rt = instruction.rt;
 break;
 case C_EQ_S:
-ans.rtype.rs = instruction.rd;
+ans.rtype.rd = instruction.rd;
 ans.rtype.rt = instruction.rt;
 break;
 case C_EQ_D:
-ans.rtype.rs = instruction.rd;
+ans.rtype.rd = instruction.rd;
 ans.rtype.rt = instruction.rt;
 break;
 case C_UEQ_S:
-ans.rtype.rs = instruction.rd;
+ans.rtype.rd = instruction.rd;
 ans.rtype.rt = instruction.rt;
 break;
 case C_UEQ_D:
-ans.rtype.rs = instruction.rd;
+ans.rtype.rd = instruction.rd;
 ans.rtype.rt = instruction.rt;
 break;
 case C_OLT_S:
-ans.rtype.rs = instruction.rd;
+ans.rtype.rd = instruction.rd;
 ans.rtype.rt = instruction.rt;
 break;
 case C_OLT_D:
-ans.rtype.rs = instruction.rd;
+ans.rtype.rd = instruction.rd;
 ans.rtype.rt = instruction.rt;
 break;
 case C_ULT_S:
-ans.rtype.rs = instruction.rd;
+ans.rtype.rd = instruction.rd;
 ans.rtype.rt = instruction.rt;
 break;
 case C_ULT_D:
-ans.rtype.rs = instruction.rd;
+ans.rtype.rd = instruction.rd;
 ans.rtype.rt = instruction.rt;
 break;
 case C_OLE_S:
-ans.rtype.rs = instruction.rd;
+ans.rtype.rd = instruction.rd;
 ans.rtype.rt = instruction.rt;
 break;
 case C_OLE_D:
-ans.rtype.rs = instruction.rd;
+ans.rtype.rd = instruction.rd;
 ans.rtype.rt = instruction.rt;
 break;
 case C_ULE_S:
-ans.rtype.rs = instruction.rd;
+ans.rtype.rd = instruction.rd;
 ans.rtype.rt = instruction.rt;
 break;
 case C_ULE_D:
-ans.rtype.rs = instruction.rd;
+ans.rtype.rd = instruction.rd;
 ans.rtype.rt = instruction.rt;
 break;
 case C_SF_S:
-ans.rtype.rs = instruction.rd;
+ans.rtype.rd = instruction.rd;
 ans.rtype.rt = instruction.rt;
 break;
 case C_SF_D:
-ans.rtype.rs = instruction.rd;
+ans.rtype.rd = instruction.rd;
 ans.rtype.rt = instruction.rt;
 break;
 case C_NGLE_S:
-ans.rtype.rs = instruction.rd;
+ans.rtype.rd = instruction.rd;
 ans.rtype.rt = instruction.rt;
 break;
 case C_NGLE_D:
-ans.rtype.rs = instruction.rd;
+ans.rtype.rd = instruction.rd;
 ans.rtype.rt = instruction.rt;
 break;
 case C_SEQ_S:
-ans.rtype.rs = instruction.rd;
+ans.rtype.rd = instruction.rd;
 ans.rtype.rt = instruction.rt;
 break;
 case C_SEQ_D:
-ans.rtype.rs = instruction.rd;
+ans.rtype.rd = instruction.rd;
 ans.rtype.rt = instruction.rt;
 break;
 case C_NGL_S:
-ans.rtype.rs = instruction.rd;
+ans.rtype.rd = instruction.rd;
 ans.rtype.rt = instruction.rt;
 break;
 case C_NGL_D:
-ans.rtype.rs = instruction.rd;
+ans.rtype.rd = instruction.rd;
 ans.rtype.rt = instruction.rt;
 break;
 case C_LT_S:
-ans.rtype.rs = instruction.rd;
-ans.rtype.rt = instruction.rt;
-break;
 case C_LT_D:
-ans.rtype.rs = instruction.rd;
-ans.rtype.rt = instruction.rt;
-break;
 case C_NGE_S:
-ans.rtype.rs = instruction.rd;
-ans.rtype.rt = instruction.rt;
-break;
 case C_NGE_D:
-ans.rtype.rs = instruction.rd;
-ans.rtype.rt = instruction.rt;
-break;
 case C_LE_S:
-ans.rtype.rs = instruction.rd;
-ans.rtype.rt = instruction.rt;
-break;
 case C_LE_D:
-ans.rtype.rs = instruction.rd;
-ans.rtype.rt = instruction.rt;
-break;
 case C_NGT_S:
-ans.rtype.rs = instruction.rd;
-ans.rtype.rt = instruction.rt;
-break;
 case C_NGT_D:
 ans.rtype.rs = instruction.rd;
 ans.rtype.rt = instruction.rt;
 break;
 case CEIL_L_S:
-ans.rtype.rd = instruction.sa;
-ans.rtype.rs = instruction.rd;
-break;
 case CEIL_L_D:
-ans.rtype.rd = instruction.sa;
-ans.rtype.rs = instruction.rd;
-break;
 case CEIL_W_S:
-ans.rtype.rd = instruction.sa;
-ans.rtype.rs = instruction.rd;
-break;
 case CEIL_W_D:
-ans.rtype.rd = instruction.sa;
-ans.rtype.rs = instruction.rd;
+ans.rtype.sa = instruction.sa;
+ans.rtype.rd = instruction.rd;
 break;
 case CFC1:
 ans.rtype.rt = instruction.rt;
@@ -1166,53 +1129,22 @@ case CTC1:
 ans.rtype.rt = instruction.rt;
 break;
 case CVT_D_S:
-ans.rtype.rd = instruction.sa;
-ans.rtype.rs = instruction.rd;
-break;
 case CVT_D_W:
-ans.rtype.rd = instruction.sa;
-ans.rtype.rs = instruction.rd;
-break;
 case CVT_D_L:
-ans.rtype.rd = instruction.sa;
-ans.rtype.rs = instruction.rd;
-break;
 case CVT_L_D:
-ans.rtype.rd = instruction.sa;
-ans.rtype.rs = instruction.rd;
-break;
 case CVT_L_S:
-ans.rtype.rd = instruction.sa;
-ans.rtype.rs = instruction.rd;
-break;
 case CVT_S_D:
-ans.rtype.rd = instruction.sa;
-ans.rtype.rs = instruction.rd;
-break;
 case CVT_S_W:
-ans.rtype.rd = instruction.sa;
-ans.rtype.rs = instruction.rd;
-break;
 case CVT_S_L:
-ans.rtype.rd = instruction.sa;
-ans.rtype.rs = instruction.rd;
-break;
 case CVT_W_S:
-ans.rtype.rd = instruction.sa;
-ans.rtype.rs = instruction.rd;
-break;
 case CVT_W_D:
-ans.rtype.rd = instruction.sa;
-ans.rtype.rs = instruction.rd;
+ans.rtype.sa = instruction.sa;
+ans.rtype.rd = instruction.rd;
 break;
 case DIV_S:
-ans.rtype.rd = instruction.sa;
-ans.rtype.rs = instruction.rd;
-ans.rtype.rt = instruction.rt;
-break;
 case DIV_D:
-ans.rtype.rd = instruction.sa;
-ans.rtype.rs = instruction.rd;
+ans.rtype.sa = instruction.sa;
+ans.rtype.rd = instruction.rd;
 ans.rtype.rt = instruction.rt;
 break;
 case DMFC1:
@@ -1224,20 +1156,11 @@ ans.rtype.rt = instruction.rt;
 ans.rtype.rd = instruction.rd;
 break;
 case FLOOR_L_S:
-ans.rtype.rd = instruction.sa;
-ans.rtype.rs = instruction.rd;
-break;
 case FLOOR_L_D:
-ans.rtype.rd = instruction.sa;
-ans.rtype.rs = instruction.rd;
-break;
 case FLOOR_W_S:
-ans.rtype.rd = instruction.sa;
-ans.rtype.rs = instruction.rd;
-break;
 case FLOOR_W_D:
-ans.rtype.rd = instruction.sa;
-ans.rtype.rs = instruction.rd;
+ans.rtype.sa = instruction.sa;
+ans.rtype.rd = instruction.rd;
 break;
 case LDC1:
 ans.rtype.rt = instruction.rt;
@@ -1252,71 +1175,48 @@ ans.rtype.rt = instruction.rt;
 ans.rtype.rd = instruction.rd;
 break;
 case MOV_S:
-ans.rtype.rd = instruction.sa;
-ans.rtype.rs = instruction.rd;
+ans.rtype.sa = instruction.sa;
+ans.rtype.rd = instruction.rd;
 break;
 case MOV_D:
-ans.rtype.rd = instruction.sa;
-ans.rtype.rs = instruction.rd;
+ans.rtype.sa = instruction.sa;
+ans.rtype.rd = instruction.rd;
 break;
 case MTC1:
 ans.rtype.rt = instruction.rt;
 ans.rtype.rd = instruction.rd;
 break;
 case MUL_S:
-ans.rtype.rd = instruction.sa;
-ans.rtype.rs = instruction.rd;
-ans.rtype.rt = instruction.rt;
-break;
 case MUL_D:
-ans.rtype.rd = instruction.sa;
-ans.rtype.rs = instruction.rd;
+ans.rtype.sa = instruction.sa;
+ans.rtype.rd = instruction.rd;
 ans.rtype.rt = instruction.rt;
 break;
 case NEG_S:
-ans.rtype.rd = instruction.sa;
-ans.rtype.rs = instruction.rd;
-break;
 case NEG_D:
-ans.rtype.rd = instruction.sa;
-ans.rtype.rs = instruction.rd;
-break;
 case ROUND_L_S:
-ans.rtype.rd = instruction.sa;
-ans.rtype.rs = instruction.rd;
-break;
 case ROUND_L_D:
-ans.rtype.rd = instruction.sa;
-ans.rtype.rs = instruction.rd;
-break;
 case ROUND_W_S:
-ans.rtype.rd = instruction.sa;
-ans.rtype.rs = instruction.rd;
-break;
 case ROUND_W_D:
-ans.rtype.rd = instruction.sa;
-ans.rtype.rs = instruction.rd;
+ans.rtype.sa = instruction.sa;
+ans.rtype.rd = instruction.rd;
 break;
 case SDC1:
 ans.rtype.rt = instruction.rt;
 ans.rtype.rs = instruction.rs;
 ans.itype.imm = instruction.imm & 0xFFFF;break;
 case SQRT_S:
-ans.rtype.rd = instruction.sa;
-ans.rtype.rs = instruction.rd;
+ans.rtype.sa = instruction.sa;
+ans.rtype.rd = instruction.rd;
 break;
 case SQRT_D:
-ans.rtype.rd = instruction.sa;
-ans.rtype.rs = instruction.rd;
+ans.rtype.sa = instruction.sa;
+ans.rtype.rd = instruction.rd;
 break;
 case SUB_S:
-ans.rtype.rd = instruction.sa;
-ans.rtype.rs = instruction.rd;
-ans.rtype.rt = instruction.rt;
-break;
 case SUB_D:
-ans.rtype.rd = instruction.sa;
-ans.rtype.rs = instruction.rd;
+ans.rtype.sa = instruction.sa;
+ans.rtype.rd = instruction.rd;
 ans.rtype.rt = instruction.rt;
 break;
 case SWC1:
@@ -1324,20 +1224,11 @@ ans.rtype.rt = instruction.rt;
 ans.rtype.rs = instruction.rs;
 ans.itype.imm = instruction.imm & 0xFFFF;break;
 case TRUNC_L_S:
-ans.rtype.rd = instruction.sa;
-ans.rtype.rs = instruction.rd;
-break;
 case TRUNC_L_D:
-ans.rtype.rd = instruction.sa;
-ans.rtype.rs = instruction.rd;
-break;
 case TRUNC_W_S:
-ans.rtype.rd = instruction.sa;
-ans.rtype.rs = instruction.rd;
-break;
 case TRUNC_W_D:
-ans.rtype.rd = instruction.sa;
-ans.rtype.rs = instruction.rd;
+ans.rtype.sa = instruction.sa;
+ans.rtype.rd = instruction.rd;
 break;
 case NOP:
 return 0;
