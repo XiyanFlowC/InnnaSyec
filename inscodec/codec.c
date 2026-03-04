@@ -984,7 +984,7 @@ struct instr_def instructions[] = {
 	{IT_imm, "ADDI", "$rt, $rs, #im"},
 	{IT_imm, "ADDIU", "$rt, $rs, #im"},
 	{IT_reg, "ADDU", "$rd, $rs, $rt"},
-	{IT_reg, "AND", "$rd, $rs, $rd"},
+	{IT_reg, "AND", "$rd, $rs, $rt"},
 	{IT_immu, "ANDI", "$rt, $rs, %im"},
 	{IT_imma, "BEQ", "$rs, $rt, &im"},
 	{IT_imma, "BEQL", "$rs, $rt, &im"},

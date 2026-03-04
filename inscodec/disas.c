@@ -180,7 +180,7 @@ int parse_param(const char *para, const char *def, struct instr_t *result) {
         int tmp;
         switch (*orip) {
             case '!':
-            tmp = parse_int(&value, para);
+            tmp = eval_int_expr(&value, para);
             if(tmp == -1) return -12; // format error
             para += tmp;
             break;
@@ -198,13 +198,13 @@ int parse_param(const char *para, const char *def, struct instr_t *result) {
             break;
             case '#':
             case '&':
-            tmp = parse_int(&value, para);
+            tmp = eval_int_expr(&value, para);
             if(tmp == -1) return -13; // format error
             para += tmp;
             break;
             case '*':
             case '%':
-            tmp = parse_int(&value, para);
+            tmp = eval_int_expr(&value, para);
             if(tmp == -1) return -14; // format error
             para += tmp;
             if(value < 0) return -15;

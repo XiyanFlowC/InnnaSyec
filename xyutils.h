@@ -36,10 +36,15 @@ int count_term(const char *src, const char end_ch);
 
 int dechex(const char ch);
 
-// 解析整型
-// 允许0x、0前缀表示的16进制及8进制解析。允许负号前缀。
-// 返回成功处理的字符个数，数字格式错误返回-1
+// 解析整数字面量（轻量级）
+// 支持0x、0前缀表示的十六进制、八进制和十进制解析，允许负号前缀。
+// 不支持运算符和括号。返回成功处理的字符个数，格式错误返回-1
 int parse_int(long long *result, const char *src);
+
+// 解析并计算整型表达式（高开销）
+// 支持整数字面量、一元/二元运算符（+-*/%&|^~<<>>）和括号。
+// 返回成功处理的字符个数，表达式格式错误返回-1
+int eval_int_expr(long long *result, const char *src);
 
 #ifdef __cplusplus
 }
