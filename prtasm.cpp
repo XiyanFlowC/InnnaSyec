@@ -1,4 +1,4 @@
-//#include "r5900.hpp"
+// #include "r5900.hpp"
 #include "liteopt.h"
 #include "inscodec/xyutils.h"
 #include <errno.h>
@@ -41,7 +41,7 @@ static unsigned long long dasm_sta = 0x0, dasm_end = 0xffffffffffffffff;
 static FILE *input, *output, *script; // TODO: include 支持，script相关全部重写
 static char /* *scriptnm,*/ *outputnm;
 static char scriptnm[2048];
-static bool do_invalid = false /*, do_purge = true*/, stop_if_overline = false, stop_firsterr = false, move_only_word = false;
+static bool do_invalid = false /*, do_purge = true*/, stop_if_overline = false, stop_firsterr = false, move_only_word = false, stop_at_large_li_la = true;
 int cerror = 0, cwarn = 0;
 static std::vector<int> suppressed_warn_codes;
 
@@ -51,13 +51,15 @@ static std::vector<std::string> script_lines;
 /******************************
  * 结构体定义存储            *
  ******************************/
-struct struct_field_t {
+struct struct_field_t
+{
     char name[128];
-    int size;        // 字段大小：1, 2, 4, 8
-    int offset;      // 字段在结构体中的偏移量
+    int size;   // 字段大小：1, 2, 4, 8
+    int offset; // 字段在结构体中的偏移量
 };
 
-struct struct_def_t {
+struct struct_def_t
+{
     char name[128];
     std::vector<struct_field_t> fields;
     int total_size;
@@ -83,7 +85,7 @@ static int get_field_size_by_typename(const char *typename_str)
 }
 
 // 查找结构体定义
-static struct_def_t* find_struct_def(const char *name)
+static struct_def_t *find_struct_def(const char *name)
 {
     for (size_t i = 0; i < struct_defs.size(); ++i)
     {
@@ -92,7 +94,6 @@ static struct_def_t* find_struct_def(const char *name)
     }
     return NULL;
 }
-
 
 int handle_i(const char *filename);
 int handle_o(const char *filename);
@@ -109,7 +110,7 @@ void warn(int code);
 void fatal(int code);
 void info(int code);
 int load_script_lines();
-//int check();
+// int check();
 int genasm(unsigned char *buffer, long long buffer_size, bool check_only = false, int *line_idx = nullptr);
 
 static int is_warning_suppressed(int code)
@@ -125,7 +126,7 @@ static int is_warning_suppressed(int code)
 int main(int argc, const char **argv)
 {
     PrepareOpcodeBuffer();
-    
+
     lopt_regopt("stop-if-out-of-range", 'r', LOPT_FLG_CH_VLD | LOPT_FLG_OPT_VLD | LOPT_FLG_STR_VLD,
                 [](const char *ans) -> int
                 {
@@ -180,7 +181,8 @@ int main(int argc, const char **argv)
     lopt_regopt("limits", 'l', LOPT_FLG_CH_VLD | LOPT_FLG_OPT_VLD | LOPT_FLG_STR_VLD,
                 [](const char *lmt) -> int
                 {
-                    if(lmt == NULL) fatal(1901);
+                    if (lmt == NULL)
+                        fatal(1901);
                     sscanf(lmt, "%llx:%llx", &dasm_sta, &dasm_end);
                     return 0;
                 });
@@ -204,12 +206,21 @@ int main(int argc, const char **argv)
                 [](const char *stub) -> int
                 {
                     script = stdin;
-                    //scriptnm = strdup("<stdin>");
+                    // scriptnm = strdup("<stdin>");
                     strcpy(scriptnm, "<stdin>");
                     return 0;
                 });
     lopt_regopt("disasmimm", 'D', LOPT_FLG_CH_VLD | LOPT_FLG_OPT_VLD | LOPT_FLG_STR_VLD, handle_D);
     lopt_regopt("asmimm", 'A', LOPT_FLG_CH_VLD | LOPT_FLG_OPT_VLD | LOPT_FLG_STR_VLD, handle_A);
+    lopt_regopt("enable-delay-slot-large-li-la", '\0', LOPT_FLG_CH_VLD | LOPT_FLG_OPT_VLD,
+                [](const char *stub) -> int
+                {
+                    // 允许在分支延迟槽中使用大型 LI/LA 指令（会被拆成两条指令并触发内部的指令交换）
+                    // 这是十分危险的，因为如果交换导致标签地址改变，会引发难以预料的错误。
+                    // 但在为了书写便利性而且用户非常清楚自己在做什么的情况下，这个选项还是有一定的使用价值的。
+                    stop_at_large_li_la = false;
+                    return 0;
+                });
     lopt_regopt("help", 'h', LOPT_FLG_CH_VLD | LOPT_FLG_OPT_VLD | LOPT_FLG_STR_VLD, show_help);
 
     int ret = lopt_parse(argc, argv);
@@ -282,7 +293,7 @@ int main(int argc, const char **argv)
             }
             else
             {
-                //printdis(strbuf, result);
+                // printdis(strbuf, result);
                 disas(result, i, strbuf);
                 fprintf(output, "%s\n", strbuf);
             }
@@ -296,15 +307,15 @@ int main(int argc, const char **argv)
             fatal(2002);
         if (script == NULL)
             fatal(2003);
-        
+
         // 先将所有脚本行读入内存
         if (load_script_lines() != 0)
             fatal(2004);
-        
+
         if (0 == genasm(buf, len, true))
             genasm(buf, len);
 
-        if(!cerror)
+        if (!cerror)
             fwrite(buf, len, 1, output);
         else
         {
@@ -312,7 +323,7 @@ int main(int argc, const char **argv)
             output = NULL;
             remove(outputnm);
         }
-        
+
         printf("汇编处理结束：%d个错误，%d个警告。\n", cerror, cwarn);
     }
 
@@ -347,6 +358,8 @@ void afatal(int linec, int code, const char *line)
 // 获取并输出警告信息，并给出文件名、行号和行内容
 void awarn(int linec, int code, const char *line)
 {
+    if (is_warning_suppressed(code))
+        return;
     printf("(%s:%d) %s\n\t", scriptnm, linec, line);
     warn(code);
 }
@@ -360,43 +373,56 @@ int get_asm_len(const char *src)
     int eles = sscanf(src, "%s", mnemonic);
     strupr(mnemonic);
 
-    if (eles == 0) return -1;
+    if (eles == 0)
+        return -1;
 
-    for(int i = 0; i < OPTION_COUNT; ++i) {
-        if (strcmp(instructions[i].name, mnemonic) == 0) return 4;
+    for (int i = 0; i < OPTION_COUNT; ++i)
+    {
+        if (strcmp(instructions[i].name, mnemonic) == 0)
+            return 4;
     }
 
-    if(0 == strcmp(mnemonic, "LI"))
+    if (0 == strcmp(mnemonic, "LI"))
     {
         char *para = str_first_not(src + 2, '\r');
         instr_t tmp;
-        if(parse_param(para, "$rt, #im", &tmp) < 0) return -1;
-        if(tmp.imm > 0x7fff || (*(long long*)&tmp.imm) < -0x8000) return 8;
+        if (parse_param(para, "$rt, #im", &tmp) < 0)
+            return -1;
+        unsigned int imm_u32 = (unsigned int)(tmp.imm & 0xFFFFFFFFULL);
+        long long imm_s32 = (imm_u32 & 0x80000000U)
+                                ? (long long)(imm_u32 | 0xFFFFFFFF00000000ULL)
+                                : (long long)imm_u32;
+        // 若低 16 位全为 0，只需 LUI 设置高 16 位即可
+        if ((imm_s32 & 0xFFFF) == 0)
+            return 4;
+        if (imm_s32 > 0x7fff || imm_s32 < -0x8000)
+            return 8;
         return 4;
     }
-    else if(0 == strcmp(mnemonic, "LA"))
+    else if (0 == strcmp(mnemonic, "LA"))
     {
         return 8;
     }
-    else if(0 == strcmp(mnemonic, "MOVE"))
+    else if (0 == strcmp(mnemonic, "MOVE"))
     {
         return 4;
     }
-    else if(0 == strcmp(mnemonic, "DMOVE"))
+    else if (0 == strcmp(mnemonic, "DMOVE"))
     {
         return 4;
     }
-    else if(0 == strcmp(mnemonic, "B"))
+    else if (0 == strcmp(mnemonic, "B"))
     {
         return 4;
     }
-    else if(0 == strcmp(mnemonic, "STRUCT"))
+    else if (0 == strcmp(mnemonic, "STRUCT"))
     {
         // struct StructName <...>
         // 需要找到结构体定义并计算大小
         char *p = str_first_not(src + 6, '\r');
-        if (p == NULL) return -1;
-        
+        if (p == NULL)
+            return -1;
+
         char struct_name[128];
         int name_len = 0;
         while (*p && !isspace(*p) && *p != '<' && name_len < 127)
@@ -404,13 +430,15 @@ int get_asm_len(const char *src)
             struct_name[name_len++] = *p++;
         }
         struct_name[name_len] = '\0';
-        
+
         struct_def_t *sdef = find_struct_def(struct_name);
-        if (sdef == NULL) return -1;
-        
+        if (sdef == NULL)
+            return -1;
+
         return sdef->total_size;
     }
-    else return -1;
+    else
+        return -1;
 }
 
 /******************************
@@ -435,9 +463,9 @@ static int find_label_value(const char *name, unsigned long long *value)
             struct_name_len = sizeof(struct_name) - 1;
         strncpy(struct_name, name, struct_name_len);
         struct_name[struct_name_len] = '\0';
-        
+
         const char *field_name = dot + 1;
-        
+
         // 查找结构体定义
         struct_def_t *sdef = find_struct_def(struct_name);
         if (sdef != NULL)
@@ -453,7 +481,7 @@ static int find_label_value(const char *name, unsigned long long *value)
             }
         }
     }
-    
+
     // 普通标签查找
     for (int i = 0; i < tag_p; ++i)
     {
@@ -468,7 +496,7 @@ static int find_label_value(const char *name, unsigned long long *value)
 
 static int is_ident_start_char(char c)
 {
-    return isalpha((unsigned char)c) || c == '_' || c == '.' || c == '$' || c == '@';
+    return isalpha((unsigned char)c) || c == '_' || c == '.' || c == '@';
 }
 
 static int is_ident_char(char c)
@@ -550,7 +578,7 @@ static int eval_expr_with_labels(const char *expr, long long *out)
     return 0;
 }
 
-static void replace_labels_in_line(char *line)
+static int replace_labels_in_line(char *line)
 {
     std::string src(line);
     size_t pos = 0;
@@ -578,7 +606,38 @@ static void replace_labels_in_line(char *line)
             }
             else
             {
-                out += name;
+                bool is_valid_token = false;
+                // 检查是否为寄存器名
+                for (int i = 0; i < sizeof(gpr_names) / sizeof(gpr_names[0]); ++i)
+                {
+                    if (name == gpr_names[i])
+                    {
+                        out += name;
+                        is_valid_token = true;
+                        break;
+                    }
+                }
+                for (int i = 0; !is_valid_token && i < sizeof(cop0r_names) / sizeof(cop0r_names[0]); ++i)
+                {
+                    if (name == cop0r_names[i])
+                    {
+                        out += name;
+                        is_valid_token = true;
+                        break;
+                    }
+                }
+                for (int i = 0; !is_valid_token && i < sizeof(cop1r_names) / sizeof(cop1r_names[0]); ++i)
+                {
+                    if (name == cop1r_names[i])
+                    {
+                        out += name;
+                        is_valid_token = true;
+                        break;
+                    }
+                }
+
+                if (!is_valid_token)
+                    return -1;
             }
         }
         else
@@ -590,6 +649,8 @@ static void replace_labels_in_line(char *line)
 
     if (out.size() < 4096)
         strcpy(line, out.c_str());
+
+    return 0;
 }
 
 // 判断：是否为有分支延迟槽之指令（基于助记符）
@@ -599,10 +660,14 @@ static void replace_labels_in_line(char *line)
 int is_lbinst(char *nm)
 {
     strupr(nm);
-    if(nm[0] == 'J' && nm[1] == 'A' && nm[3] == 'R') return 3; // jalr
-    if(nm[0] == 'J' && nm[1] != 'R') return 1; // r for jr
-    if(nm[0] == 'B' && nm[1] != 'R') return 2; // r for break
-    if(nm[0] == 'J' && nm[1] == 'R') return 3; // jr - not relate to the lbl
+    if (nm[0] == 'J' && nm[1] == 'A' && nm[3] == 'R')
+        return 3; // jalr
+    if (nm[0] == 'J' && nm[1] != 'R')
+        return 1; // r for jr
+    if (nm[0] == 'B' && nm[1] != 'R')
+        return 2; // r for break
+    if (nm[0] == 'J' && nm[1] == 'R')
+        return 3; // jr - not relate to the lbl
     return 0;
 }
 
@@ -614,22 +679,24 @@ int mkasm(unsigned char *buf, char *asmb, unsigned long long now_vma)
     char mnemonic[64];
     sscanf(asmb, "%s", mnemonic);
     int type = is_lbinst(mnemonic);
-    if(type)
+    if (type)
     {
-        if(is_delayslot) return -5;
-        if(type == 3)
+        if (is_delayslot)
+            return -5;
+        if (type == 3)
         {
             is_delayslot = 2;
             goto mkasm_nparse;
         }
         char *lbl = str_last(asmb, ',');
-        if(lbl == NULL) 
+        if (lbl == NULL)
         {
-            if((lbl = str_first(asmb, ' ')) == NULL
-                && (lbl = str_first(asmb, '\t')) == NULL) return -3;
+            if ((lbl = str_first(asmb, ' ')) == NULL && (lbl = str_first(asmb, '\t')) == NULL)
+                return -3;
         }
         lbl = str_first_not(lbl + 1, '\r');
-        if(lbl == NULL) return -3;
+        if (lbl == NULL)
+            return -3;
         str_trim_end(lbl);
         long long lbl_val = 0;
         int eval_ret = eval_expr_with_labels(lbl, &lbl_val);
@@ -653,165 +720,197 @@ int mkasm(unsigned char *buf, char *asmb, unsigned long long now_vma)
         // 注解：下一条延迟槽指令返回时减少1变为0，即恢复正常状态。
         goto mkasm_nparse;
     }
-    mkasm_nparse:
+mkasm_nparse:
 
-        replace_labels_in_line(asmb);
+    // LA 超前检查确保标签不被替换
+    if (strcmp(mnemonic, "LA") == 0)
+    {
+        if (is_delayslot > 0 && stop_at_large_li_la)
+            return -6;
+
+        char *lbl = str_first(asmb + 2, ',');
+        if (lbl == NULL)
+            return -3;
+        lbl = str_first_not(lbl + 1, '\r');
+        if (lbl == NULL)
+            return -3;
+        for (int i = 0; i < tag_p; ++i)
+        {
+            if (0 == strcmp(tag_nm[i], lbl))
+            {
+                instr_t ans;
+                sprintf(lbl, "%llu", tag_vma[i]);
+                parse_param(str_first_not(asmb + 2, '\r'), "$rt, #im", &ans);
+                int low = ans.imm & 0xffff;
+                ans.opcode = LUI;
+                ans.imm >>= 16;
+                if (low > 0x7fff)
+                    ans.imm += 1;
+                // 已禁用危险的“交换指令”逻辑：
+                if(is_delayslot)
+                {
+                    *((unsigned int *)buf) = *((unsigned int *)buf - 1);
+                    auto tins = DecodeInstruction(*((unsigned int *)buf - 1));
+                    if(is_lbinst((char*)instructions[tins.opcode].name) == 2)
+                        tins.imm -= 1, *((unsigned int *)buf) = EncodeInstruction(tins);
+                    *((unsigned int *)buf - 1) = EncodeInstruction(ans);
+                }
+                else
+                    *((unsigned int *)buf) = EncodeInstruction(ans);
+                buf += 4;
+                ans.opcode = ADDIU;
+                ans.rs = ans.rt;
+                ans.imm = low > 0x7fff ? -(0x10000 - low) : low;
+                *((unsigned int *)buf) = EncodeInstruction(ans);
+                if (is_delayslot)
+                    --is_delayslot;
+                return 8;
+            }
+        }
+        return -4;
+    }
+
+    if (replace_labels_in_line(asmb)) {
+        return -4;
+    }
+
     instr_t ans;
     int ret = as(asmb, now_vma, &ans);
     // if(ret < -1) return ret;
-    if(ret == -17) // 非真指令的处理（伪指令判别）
+    if (ret == -17) // 非真指令的处理（伪指令判别）
     {
         char mnemonic[128];
         asmb = str_first_not(asmb, '\r');
         int eles = sscanf(asmb, "%s", mnemonic);
         strupr(mnemonic);
 
-        if(strcmp(mnemonic, "LI") == 0)
+        if (strcmp(mnemonic, "LI") == 0)
         {
             char *para = str_first_not(asmb + 2, '\r');
             instr_t tmp;
-            if(parse_param(para, "$rt, #im", &tmp) < 0) return -1;
-            if(tmp.imm > 0x7fff)
+            if (parse_param(para, "$rt, #im", &tmp) < 0)
+                return -1;
+            unsigned int imm_u32 = (unsigned int)(tmp.imm & 0xFFFFFFFFULL);
+            long long imm_s32 = (imm_u32 & 0x80000000U)
+                                    ? (long long)(imm_u32 | 0xFFFFFFFF00000000ULL)
+                                    : (long long)imm_u32;
+            if ((imm_s32 & 0xFFFF) == 0)
             {
-                if (is_delayslot > 0)
+                tmp.opcode = LUI;
+                tmp.imm = (imm_u32 >> 16) & 0xffff;
+                *((unsigned int *)buf) = EncodeInstruction(tmp);
+                if (is_delayslot)
+                    --is_delayslot;
+                return 4;
+            }
+            if (imm_s32 > 0x7fff)
+            {
+                if (is_delayslot > 0 && stop_at_large_li_la)
                     return -6;
 
-                int low = tmp.imm & 0xffff;
+                int low = imm_u32 & 0xffff;
                 tmp.opcode = LUI;
-                tmp.imm >>= 16;
-                if(low > 0x7fff) tmp.imm += 1;
+                tmp.imm = (imm_u32 >> 16) & 0xffff;
+                if (low > 0x7fff)
+                    tmp.imm += 1;
                 // 已禁用危险的“交换指令”逻辑：
-                // if(is_delayslot)
-                // {
-                //     *((unsigned int *)buf) = *((unsigned int *)buf - 1);
-                //     auto tins = DecodeInstruction(*((unsigned int *)buf - 1));
-                //     if(is_lbinst((char*)instructions[tins.opcode].name) == 2)
-                //         tins.imm -= 1, *((unsigned int *)buf) = EncodeInstruction(tins);
-                //     *((unsigned int *)buf - 1) = EncodeInstruction(tmp);
-                // }
-                // else
-                //     *((unsigned int *)buf) = EncodeInstruction(tmp);
-                *((unsigned int *)buf) = EncodeInstruction(tmp);
+                if(is_delayslot)
+                {
+                    *((unsigned int *)buf) = *((unsigned int *)buf - 1);
+                    auto tins = DecodeInstruction(*((unsigned int *)buf - 1));
+                    if(is_lbinst((char*)instructions[tins.opcode].name) == 2)
+                        tins.imm -= 1, *((unsigned int *)buf) = EncodeInstruction(tins);
+                    *((unsigned int *)buf - 1) = EncodeInstruction(tmp);
+                }
+                else
+                    *((unsigned int *)buf) = EncodeInstruction(tmp);
                 buf += 4;
                 tmp.opcode = ADDIU;
                 tmp.rs = tmp.rt;
                 tmp.imm = low > 0x7fff ? -(0x10000 - low) : low;
                 *((unsigned int *)buf) = EncodeInstruction(tmp);
-                if(is_delayslot) --is_delayslot;
+                if (is_delayslot)
+                    --is_delayslot;
                 return 8;
             }
-            if((*(long long*)&tmp.imm) < -0x8000)
+            if (imm_s32 < -0x8000)
             {
-                if (is_delayslot > 0)
+                if (is_delayslot > 0 && stop_at_large_li_la)
                     return -6;
 
-                int low = tmp.imm & 0xffff;
-                int high = (tmp.imm >> 16) & 0xffff;
+                int low = imm_u32 & 0xffff;
+                int high = (imm_u32 >> 16) & 0xffff;
                 tmp.opcode = LUI;
                 tmp.imm = high;
                 // 已禁用危险的“交换指令”逻辑：
-                // if(is_delayslot)
-                // {
-                //     *((unsigned int *)buf) = *((unsigned int *)buf - 1);
-                //     auto tins = DecodeInstruction(*((unsigned int *)buf - 1));
-                //     if(is_lbinst((char*)instructions[tins.opcode].name) == 2)
-                //         tins.imm -= 1, *((unsigned int *)buf) = EncodeInstruction(tins);
-                //     *((unsigned int *)buf - 1) = EncodeInstruction(tmp);
-                // }
-                // else
-                //     *((unsigned int *)buf) = EncodeInstruction(tmp);
-                *((unsigned int *)buf) = EncodeInstruction(tmp);
+                if(is_delayslot)
+                {
+                    *((unsigned int *)buf) = *((unsigned int *)buf - 1);
+                    auto tins = DecodeInstruction(*((unsigned int *)buf - 1));
+                    if(is_lbinst((char*)instructions[tins.opcode].name) == 2)
+                        tins.imm -= 1, *((unsigned int *)buf) = EncodeInstruction(tins);
+                    *((unsigned int *)buf - 1) = EncodeInstruction(tmp);
+                }
+                else
+                    *((unsigned int *)buf) = EncodeInstruction(tmp);
                 buf += 4;
                 tmp.opcode = ORI;
                 tmp.rs = tmp.rt;
                 tmp.imm = low;
                 *((unsigned int *)buf) = EncodeInstruction(tmp);
-                if(is_delayslot) --is_delayslot;
+                if (is_delayslot)
+                    --is_delayslot;
                 return 8;
             }
             tmp.opcode = ADDIU;
             tmp.rs = 0;
             *((unsigned int *)buf) = EncodeInstruction(tmp);
-            if(is_delayslot) --is_delayslot;
+            if (is_delayslot)
+                --is_delayslot;
             return 4;
-        }
-        else if(strcmp(mnemonic, "LA") == 0)
-        {
-            if (is_delayslot > 0)
-                return -6;
-
-            char *lbl = str_first(asmb + 2, ',');
-            if(lbl == NULL) return -3;
-            lbl = str_first_not(lbl + 1, '\r');
-            if(lbl == NULL) return -3;
-            for(int i = 0; i < tag_p; ++i)
-            {
-                if(0 == strcmp(tag_nm[i], lbl))
-                {
-                    sprintf(lbl, "%llu", tag_vma[i]);
-                    parse_param(str_first_not(asmb + 2, '\r'), "$rt, #im", &ans);
-                    int low = ans.imm & 0xffff;
-                    ans.opcode = LUI;
-                    ans.imm >>= 16;
-                    if(low > 0x7fff) ans.imm += 1;
-                    // 已禁用危险的“交换指令”逻辑：
-                    // if(is_delayslot)
-                    // {
-                    //     *((unsigned int *)buf) = *((unsigned int *)buf - 1);
-                    //     auto tins = DecodeInstruction(*((unsigned int *)buf - 1));
-                    //     if(is_lbinst((char*)instructions[tins.opcode].name) == 2)
-                    //         tins.imm -= 1, *((unsigned int *)buf) = EncodeInstruction(tins);
-                    //     *((unsigned int *)buf - 1) = EncodeInstruction(ans);
-                    // }
-                    // else
-                    //     *((unsigned int *)buf) = EncodeInstruction(ans);
-                    *((unsigned int *)buf) = EncodeInstruction(ans);
-                    buf += 4;
-                    ans.opcode = ADDIU;
-                    ans.rs = ans.rt;
-                    ans.imm = low > 0x7fff ? -(0x10000 - low) : low;
-                    *((unsigned int *)buf) = EncodeInstruction(ans);
-                    if(is_delayslot) --is_delayslot;
-                    return 8;
-                }
-            }
-            return -4;
         }
         else if (strcmp(mnemonic, "MOVE") == 0)
         {
             char *para = str_first_not(asmb + 4, '\r');
-            if (parse_param(para, "$rd, $rs", &ans) < 0) return -1;
+            if (parse_param(para, "$rd, $rs", &ans) < 0)
+                return -1;
             ans.opcode = move_only_word ? ADDU : DADDU;
             ans.rt = 0; // zero
             *((unsigned int *)buf) = EncodeInstruction(ans);
-            if(is_delayslot) --is_delayslot;
+            if (is_delayslot)
+                --is_delayslot;
             return 4;
         }
         else if (strcmp(mnemonic, "DMOVE") == 0)
         {
             char *para = str_first_not(asmb + 4, '\r');
-            if (parse_param(para, "$rd, $rs", &ans) < 0) return -1;
+            if (parse_param(para, "$rd, $rs", &ans) < 0)
+                return -1;
             ans.opcode = DADDU;
             ans.rt = 0; // zero
             *((unsigned int *)buf) = EncodeInstruction(ans);
-            if(is_delayslot) --is_delayslot;
+            if (is_delayslot)
+                --is_delayslot;
             return 4;
         }
         else if (strcmp(mnemonic, "B") == 0)
         {
-            if (parse_param(str_first_not(asmb + 1, '\r'), "&im", &ans) < 0) return -1;
+            if (parse_param(str_first_not(asmb + 1, '\r'), "&im", &ans) < 0)
+                return -1;
             ans.opcode = BEQ;
             ans.rs = ans.rt = 0; // zero (beq zero, zero, &im)
             *((unsigned int *)buf) = EncodeInstruction(ans);
-            if(is_delayslot) --is_delayslot;
+            if (is_delayslot)
+                --is_delayslot;
             return 4;
         }
         else if (strcmp(mnemonic, "STRUCT") == 0)
         {
             // struct StructName <val1, val2, ...>
             const char *p = str_first_not(asmb + 6, '\r');
-            if (p == NULL) return -3;
-            
+            if (p == NULL)
+                return -3;
+
             // 提取结构体名称
             char struct_name[128];
             int name_len = 0;
@@ -820,40 +919,45 @@ int mkasm(unsigned char *buf, char *asmb, unsigned long long now_vma)
                 struct_name[name_len++] = *p++;
             }
             struct_name[name_len] = '\0';
-            
+
             // 查找结构体定义
             struct_def_t *sdef = find_struct_def(struct_name);
-            if (sdef == NULL) return -4;  // 结构体未定义
-            
+            if (sdef == NULL)
+                return -4; // 结构体未定义
+
             // 跳到 '<'
             p = str_first_not(p, '\r');
-            if (p == NULL || *p != '<') return -3;
+            if (p == NULL || *p != '<')
+                return -3;
             p++;
-            
+
             // 解析值列表
             unsigned char *write_ptr = buf;
             for (size_t field_idx = 0; field_idx < sdef->fields.size(); ++field_idx)
             {
                 p = str_first_not(p, '\r');
-                if (p == NULL) return -3;
-                
+                if (p == NULL)
+                    return -3;
+
                 // 提取当前值表达式（直到逗号或 '>'）
                 const char *delim = p;
                 while (*delim && *delim != ',' && *delim != '>')
                     delim++;
-                
+
                 char expr_buf[256];
                 size_t expr_len = delim - p;
-                if (expr_len >= sizeof(expr_buf)) expr_len = sizeof(expr_buf) - 1;
+                if (expr_len >= sizeof(expr_buf))
+                    expr_len = sizeof(expr_buf) - 1;
                 strncpy(expr_buf, p, expr_len);
                 expr_buf[expr_len] = '\0';
                 str_trim_end(expr_buf);
-                
+
                 // 求值
                 long long value = 0;
                 int eval_ret = eval_expr_with_labels(expr_buf, &value);
-                if (eval_ret != 0) return -3;
-                
+                if (eval_ret != 0)
+                    return -3;
+
                 // 写入数据
                 const struct_field_t &field = sdef->fields[field_idx];
                 switch (field.size)
@@ -872,30 +976,40 @@ int mkasm(unsigned char *buf, char *asmb, unsigned long long now_vma)
                     break;
                 }
                 write_ptr += field.size;
-                
+
                 // 移动到下一个值
                 p = delim;
                 if (*p == ',')
                     p++;
             }
-            
+
             // 应该以 '>' 结束
             p = str_first_not(p, '\r');
-            if (p == NULL || *p != '>') return -3;
-            
-            if(is_delayslot) --is_delayslot;
+            if (p == NULL || *p != '>')
+                return -3;
+
+            if (is_delayslot)
+                --is_delayslot;
             return sdef->total_size;
         }
     }
     else
     {
         // if (ret) return ret;
-        if(ret == -19)
+        if (ret == -19)
             return -1000;
-        if (ret) return -3;
+        if (ret == -21)
+            return -21;  // unknown GPR name
+        if (ret == -22)
+            return -22;  // unknown COP0 register
+        if (ret == -23)
+            return -23;  // unknown COP1 register
+        if (ret)
+            return -3;
 
         *((unsigned int *)buf) = EncodeInstruction(ans);
-        if(is_delayslot) --is_delayslot;
+        if (is_delayslot)
+            --is_delayslot;
         return 4;
     }
     return -3;
@@ -911,40 +1025,57 @@ int mkasm(unsigned char *buf, char *asmb, unsigned long long now_vma)
  */
 int process_escape_char(const char *src, unsigned char *dst, bool check_only)
 {
-    if (*src != '\\') return 0;
-    
-    if (*++src == 'x') {
+    if (*src != '\\')
+        return 0;
+
+    if (*++src == 'x')
+    {
         char a = *++src, b = *++src;
-        if(a >= 'a' && a <= 'f') a = a - 'a' + 'A';
-        if(b >= 'a' && b <= 'f') b = b - 'a' + 'A';
-        if(a >= 'A' && a <= 'F') a = a - 'A' + 10;
-        else a -= '0';
-        if(b >= 'A' && b <= 'F') b = b - 'A' + 10;
-        else b -= '0';
-        
-        if (!check_only) {
+        if (a >= 'a' && a <= 'f')
+            a = a - 'a' + 'A';
+        if (b >= 'a' && b <= 'f')
+            b = b - 'a' + 'A';
+        if (a >= 'A' && a <= 'F')
+            a = a - 'A' + 10;
+        else
+            a -= '0';
+        if (b >= 'A' && b <= 'F')
+            b = b - 'A' + 10;
+        else
+            b -= '0';
+
+        if (!check_only)
+        {
             *dst = (a << 4) | b;
         }
-        return 3;  // 返回 \xHH 的长度
+        return 3; // 返回 \xHH 的长度
     }
-    else if (*src == 'n') {
-        if (!check_only) *dst = '\n';
-        return 2;  // 返回 \n 的长度
+    else if (*src == 'n')
+    {
+        if (!check_only)
+            *dst = '\n';
+        return 2; // 返回 \n 的长度
     }
-    else if (*src == '\\') {
-        if (!check_only) *dst = '\\';
-        return 2;  // 返回 \\ 的长度
+    else if (*src == '\\')
+    {
+        if (!check_only)
+            *dst = '\\';
+        return 2; // 返回 \\ 的长度
     }
-    else if (*src == 'r') {
-        if (!check_only) *dst = '\r';
-        return 2;  // 返回 \r 的长度
+    else if (*src == 'r')
+    {
+        if (!check_only)
+            *dst = '\r';
+        return 2; // 返回 \r 的长度
     }
-    else if (*src == '0') {
-        if (!check_only) *dst = '\0';
-        return 2;  // 返回 \0 的长度
+    else if (*src == '0')
+    {
+        if (!check_only)
+            *dst = '\0';
+        return 2; // 返回 \0 的长度
     }
-    
-    return -1;  // 未知转义序列
+
+    return -1; // 未知转义序列
 }
 
 // 将脚本所有行读入内存以支持多遍扫描和stdin
@@ -952,29 +1083,29 @@ int load_script_lines()
 {
     if (script == NULL)
         return -1;
-    
+
     script_lines.clear();
     static char linebuf[4096];
     int fsret;
-    
+
     while (EOF != (fsret = fscanf(script, "%[^\n]", linebuf)))
     {
         int t = fgetc(script);
-        if('\n' != t && t != EOF) 
+        if ('\n' != t && t != EOF)
         {
             // 行太长或包含非标准行结尾，仍然添加到vector
         }
-        
-        if (fsret > 0)  // 有内容
+
+        if (fsret > 0) // 有内容
         {
             script_lines.push_back(std::string(linebuf));
         }
-        else  // 空行
+        else // 空行
         {
             script_lines.push_back(std::string(""));
         }
     }
-    
+
     return 0;
 }
 
@@ -990,15 +1121,16 @@ int load_script_lines()
  * @param linebuf 当前行内容（用于错误报告）
  * @return 处理的数据项数量
  */
-static int parse_comma_separated_data(const char *src, unsigned char *buffer, 
-                                       unsigned long long *now_loc, long long buffer_size,
-                                       int data_size, bool check_only, 
-                                       int line, const char *linebuf)
+static int parse_comma_separated_data(const char *src, unsigned char *buffer,
+                                      unsigned long long *now_loc, long long buffer_size,
+                                      int data_size, bool check_only,
+                                      int line, const char *linebuf)
 {
     const char *p = src;
     int count = 0;
-    
-    union {
+
+    union
+    {
         unsigned char u8;
         char i8;
         unsigned short u16;
@@ -1008,32 +1140,35 @@ static int parse_comma_separated_data(const char *src, unsigned char *buffer,
         unsigned long long u64;
         long long i64;
     } tmp;
-    
+
     // 解析逗号分隔的值
     while (p != NULL && *p != '\0')
     {
         p = str_first_not(p, '\r');
-        if (p == NULL || *p == '\0') break;
-        
+        if (p == NULL || *p == '\0')
+            break;
+
         if (check_only)
         {
             count++;
             // 跳到下一个逗号或结束
             while (*p != '\0' && *p != ',')
                 p++;
-            if (*p == ',') p++;
+            if (*p == ',')
+                p++;
         }
         else
         {
             long long expr_val = 0;
             const char *comma = strchr(p, ',');
             char expr_buf[256];
-            
+
             // 提取当前表达式
             if (comma != NULL)
             {
                 size_t len = comma - p;
-                if (len >= sizeof(expr_buf)) len = sizeof(expr_buf) - 1;
+                if (len >= sizeof(expr_buf))
+                    len = sizeof(expr_buf) - 1;
                 strncpy(expr_buf, p, len);
                 expr_buf[len] = '\0';
                 p = comma + 1;
@@ -1044,7 +1179,7 @@ static int parse_comma_separated_data(const char *src, unsigned char *buffer,
                 expr_buf[sizeof(expr_buf) - 1] = '\0';
                 p = NULL;
             }
-            
+
             // 求值并范围检查
             str_trim_end(expr_buf);
             int eval_ret = eval_expr_with_labels(expr_buf, &expr_val);
@@ -1058,31 +1193,31 @@ static int parse_comma_separated_data(const char *src, unsigned char *buffer,
                 aerror(line, 4130, linebuf);
                 return count;
             }
-            
+
             tmp.i64 = expr_val;
-            
+
             // 范围检查和写入
             if (*now_loc >= (unsigned long long)buffer_size)
             {
                 afatal(line, 7000, linebuf);
             }
-            
+
             switch (data_size)
             {
             case 1:
-                if (tmp.i64 < -128 || tmp.i64 > 255) 
+                if (tmp.i64 < -128 || tmp.i64 > 255)
                     awarn(line, 4109, linebuf);
                 *(buffer + *now_loc) = tmp.u8;
                 *now_loc += 1;
                 break;
             case 2:
-                if (tmp.i64 < -32768 || tmp.i64 > 65535) 
+                if (tmp.i64 < -32768 || tmp.i64 > 65535)
                     awarn(line, 4109, linebuf);
                 *((unsigned short *)(buffer + *now_loc)) = tmp.u16;
                 *now_loc += 2;
                 break;
             case 4:
-                if (tmp.i64 < -2147483648LL || tmp.i64 > 4294967295LL) 
+                if (tmp.i64 < -2147483648LL || tmp.i64 > 4294967295LL)
                     awarn(line, 4109, linebuf);
                 *((unsigned int *)(buffer + *now_loc)) = tmp.u32;
                 *now_loc += 4;
@@ -1092,11 +1227,11 @@ static int parse_comma_separated_data(const char *src, unsigned char *buffer,
                 *now_loc += 8;
                 break;
             }
-            
+
             count++;
         }
     }
-    
+
     return count;
 }
 
@@ -1109,18 +1244,19 @@ int genasm(unsigned char *buffer, long long buffer_size, bool check_only, int *l
     static char logic_filename[2048];
     int fsret = 0;
     std::stack<unsigned long long> loc_stack;
-    
+
     // 从script_lines中读取行
     for (size_t script_line_idx = 0; script_line_idx < script_lines.size(); ++script_line_idx)
     {
-        const std::string& script_line = script_lines[script_line_idx];
+        const std::string &script_line = script_lines[script_line_idx];
         strncpy(linebuf, script_line.c_str(), sizeof(linebuf) - 1);
         linebuf[sizeof(linebuf) - 1] = '\0';
         fsret = strlen(linebuf) > 0 ? 1 : 0;
 
         ++line;
 
-        if (fsret == 0) continue; // 空行
+        if (fsret == 0)
+            continue; // 空行
 
         debug("%d, %llX : %s\n", line, now_loc, linebuf);
 
@@ -1157,7 +1293,8 @@ int genasm(unsigned char *buffer, long long buffer_size, bool check_only, int *l
             if (*p == ':')
             {
                 body = str_first_not(p + 1, ' '); // 如果紧随换行，body会是NULL
-                if(body == NULL) body = p + 1; // 所以如果标签后紧随换行，用这行救一下
+                if (body == NULL)
+                    body = p + 1; // 所以如果标签后紧随换行，用这行救一下
             }
             if (*p == '"')
             {
@@ -1194,7 +1331,7 @@ int genasm(unsigned char *buffer, long long buffer_size, bool check_only, int *l
         }
 
         // 常规指令字处理
-        if ((body = str_first_not(body, '\r')) == NULL)//空行
+        if ((body = str_first_not(body, '\r')) == NULL) // 空行
         {
             continue;
         }
@@ -1214,40 +1351,40 @@ int genasm(unsigned char *buffer, long long buffer_size, bool check_only, int *l
                 unsigned long long u64;
                 long long i64;
             } tmp;
-            
-            if(get_term2(cmd, body + 1) == 0)
+
+            if (get_term2(cmd, body + 1) == 0)
             {
                 WARN(4107);
             }
             else if (0 == strcmp(cmd, "byte"))
             {
-                int count = parse_comma_separated_data(body + 5, buffer, &now_loc, 
-                                                         buffer_size, 1, check_only, 
-                                                         line, linebuf);
+                int count = parse_comma_separated_data(body + 5, buffer, &now_loc,
+                                                       buffer_size, 1, check_only,
+                                                       line, linebuf);
                 if (check_only)
                     now_loc += count;
             }
             else if (0 == strcmp(cmd, "half"))
             {
-                int count = parse_comma_separated_data(body + 5, buffer, &now_loc, 
-                                                         buffer_size, 2, check_only, 
-                                                         line, linebuf);
+                int count = parse_comma_separated_data(body + 5, buffer, &now_loc,
+                                                       buffer_size, 2, check_only,
+                                                       line, linebuf);
                 if (check_only)
                     now_loc += count * 2;
             }
             else if (0 == strcmp(cmd, "word"))
             {
-                int count = parse_comma_separated_data(body + 5, buffer, &now_loc, 
-                                                         buffer_size, 4, check_only, 
-                                                         line, linebuf);
+                int count = parse_comma_separated_data(body + 5, buffer, &now_loc,
+                                                       buffer_size, 4, check_only,
+                                                       line, linebuf);
                 if (check_only)
                     now_loc += count * 4;
             }
             else if (0 == strcmp(cmd, "dword"))
             {
-                int count = parse_comma_separated_data(body + 6, buffer, &now_loc, 
-                                                         buffer_size, 8, check_only, 
-                                                         line, linebuf);
+                int count = parse_comma_separated_data(body + 6, buffer, &now_loc,
+                                                       buffer_size, 8, check_only,
+                                                       line, linebuf);
                 if (check_only)
                     now_loc += count * 8;
             }
@@ -1265,7 +1402,7 @@ int genasm(unsigned char *buffer, long long buffer_size, bool check_only, int *l
                 unsigned long long align = 0;
                 if (sscanf(body + 6, "%llu", &align) != 1)
                     aerror(line, 3100, linebuf);
-                
+
                 // align的值必须是2的幂次方
                 if (align == 0 || (align & (align - 1)) != 0)
                     aerror(line, 9003, linebuf);
@@ -1276,7 +1413,7 @@ int genasm(unsigned char *buffer, long long buffer_size, bool check_only, int *l
             else if (0 == strcmp(cmd, "ascii"))
             {
                 char *sta = str_first(linebuf, '"');
-                if(sta == NULL)
+                if (sta == NULL)
                     aerror(line, 3109, linebuf);
                 else
                     ++sta;
@@ -1284,14 +1421,16 @@ int genasm(unsigned char *buffer, long long buffer_size, bool check_only, int *l
                 {
                     if (*sta == '\\')
                     {
-                        int esc_len = process_escape_char(sta, 
-                            (check_only ? NULL : (buffer + now_loc)), 
-                            check_only);
-                        if (esc_len < 0) {
-                            aerror(line, 4101, linebuf);  // 未知转义序列
+                        int esc_len = process_escape_char(sta,
+                                                          (check_only ? NULL : (buffer + now_loc)),
+                                                          check_only);
+                        if (esc_len < 0)
+                        {
+                            aerror(line, 4101, linebuf); // 未知转义序列
                             break;
                         }
-                        if (!check_only && now_loc >= buffer_size) FATAL(7000);
+                        if (!check_only && now_loc >= buffer_size)
+                            FATAL(7000);
                         now_loc++;
                         sta += esc_len;
                     }
@@ -1301,8 +1440,10 @@ int genasm(unsigned char *buffer, long long buffer_size, bool check_only, int *l
                     }
                     else
                     {
-                        if (!check_only) {
-                            if (now_loc >= buffer_size) FATAL(7000);
+                        if (!check_only)
+                        {
+                            if (now_loc >= buffer_size)
+                                FATAL(7000);
                             *(buffer + now_loc) = *sta;
                         }
                         now_loc++;
@@ -1311,16 +1452,17 @@ int genasm(unsigned char *buffer, long long buffer_size, bool check_only, int *l
                 }
                 if (*sta != '"')
                     aerror(line, 4101, linebuf);
-                
+
                 // 应用全局对齐
-                if (galign > 0) {
+                if (galign > 0)
+                {
                     now_loc = (now_loc + galign) & ~galign;
                 }
             }
             else if (0 == strcmp(cmd, "asciiz"))
             {
                 char *sta = str_first(linebuf, '"');
-                if(sta == NULL)
+                if (sta == NULL)
                     aerror(line, 3109, linebuf);
                 else
                     ++sta;
@@ -1328,14 +1470,16 @@ int genasm(unsigned char *buffer, long long buffer_size, bool check_only, int *l
                 {
                     if (*sta == '\\')
                     {
-                        int esc_len = process_escape_char(sta, 
-                            (check_only ? NULL : (buffer + now_loc)), 
-                            check_only);
-                        if (esc_len < 0) {
-                            aerror(line, 4101, linebuf);  // 未知转义序列
+                        int esc_len = process_escape_char(sta,
+                                                          (check_only ? NULL : (buffer + now_loc)),
+                                                          check_only);
+                        if (esc_len < 0)
+                        {
+                            aerror(line, 4101, linebuf); // 未知转义序列
                             break;
                         }
-                        if (!check_only && now_loc >= buffer_size) FATAL(7000);
+                        if (!check_only && now_loc >= buffer_size)
+                            FATAL(7000);
                         now_loc++;
                         sta += esc_len;
                     }
@@ -1345,8 +1489,10 @@ int genasm(unsigned char *buffer, long long buffer_size, bool check_only, int *l
                     }
                     else
                     {
-                        if (!check_only) {
-                            if (now_loc >= buffer_size) FATAL(7000);
+                        if (!check_only)
+                        {
+                            if (now_loc >= buffer_size)
+                                FATAL(7000);
                             *(buffer + now_loc) = *sta;
                         }
                         now_loc++;
@@ -1355,16 +1501,19 @@ int genasm(unsigned char *buffer, long long buffer_size, bool check_only, int *l
                 }
                 if (*sta != '"')
                     aerror(line, 4101, linebuf);
-                
+
                 // 添加空终止符
-                if (!check_only) {
-                    if (now_loc >= buffer_size) FATAL(7000);
+                if (!check_only)
+                {
+                    if (now_loc >= buffer_size)
+                        FATAL(7000);
                     *(buffer + now_loc) = '\0';
                 }
                 now_loc++;
-                
+
                 // 应用全局对齐
-                if (galign > 0) {
+                if (galign > 0)
+                {
                     now_loc = (now_loc + galign) & ~galign;
                 }
             }
@@ -1374,7 +1523,8 @@ int genasm(unsigned char *buffer, long long buffer_size, bool check_only, int *l
                 unsigned long long g = 0;
                 if (sscanf(body + 7, "%llu", &g) != 1)
                     aerror(line, 4102, linebuf);
-                else {
+                else
+                {
                     if (g == 0)
                         afatal(line, 4199, linebuf);
                     if (g % 2 != 0 && g != 1)
@@ -1393,7 +1543,7 @@ int genasm(unsigned char *buffer, long long buffer_size, bool check_only, int *l
                 {
                     const char *p = body + 7;
                     p = str_first_not(p, '\r');
-                    
+
                     // 读取结构体名称
                     char struct_name[128];
                     int name_len = 0;
@@ -1402,24 +1552,24 @@ int genasm(unsigned char *buffer, long long buffer_size, bool check_only, int *l
                         struct_name[name_len++] = *p++;
                     }
                     struct_name[name_len] = '\0';
-                    
+
                     if (name_len == 0)
                     {
-                        aerror(line, 9010, linebuf);  // 结构体名称为空
+                        aerror(line, 9010, linebuf); // 结构体名称为空
                         continue;
                     }
-                    
+
                     // 检查是否已定义
                     if (find_struct_def(struct_name) != NULL)
                     {
-                        aerror(line, 9011, linebuf);  // 结构体重复定义
+                        aerror(line, 9011, linebuf); // 结构体重复定义
                         continue;
                     }
-                    
+
                     struct_def_t new_struct;
                     strcpy(new_struct.name, struct_name);
                     new_struct.total_size = 0;
-                    
+
                     // 解析字段定义：type1 field1, type2 field2, ...
                     p = str_first_not(p, '\r');
                     while (p && *p)
@@ -1432,25 +1582,25 @@ int genasm(unsigned char *buffer, long long buffer_size, bool check_only, int *l
                             typename_str[type_len++] = *p++;
                         }
                         typename_str[type_len] = '\0';
-                        
+
                         if (type_len == 0)
                             break;
-                        
+
                         int field_size = get_field_size_by_typename(typename_str);
                         if (field_size < 0)
                         {
-                            aerror(line, 9012, linebuf);  // 未知字段类型
+                            aerror(line, 9012, linebuf); // 未知字段类型
                             break;
                         }
-                        
+
                         p = str_first_not(p, '\r');
-                        
+
                         // 读取字段名（可选）
                         struct_field_t field;
                         field.size = field_size;
                         field.offset = new_struct.total_size;
                         field.name[0] = '\0';
-                        
+
                         if (p && *p && *p != ',')
                         {
                             int field_name_len = 0;
@@ -1460,25 +1610,25 @@ int genasm(unsigned char *buffer, long long buffer_size, bool check_only, int *l
                             }
                             field.name[field_name_len] = '\0';
                         }
-                        
+
                         new_struct.fields.push_back(field);
                         new_struct.total_size += field_size;
-                        
+
                         // 跳过逗号
                         p = str_first_not(p, '\r');
                         if (p && *p == ',')
                             p++;
                         p = str_first_not(p, '\r');
                     }
-                    
+
                     if (new_struct.fields.size() == 0)
                     {
-                        aerror(line, 9013, linebuf);  // 结构体没有字段
+                        aerror(line, 9013, linebuf); // 结构体没有字段
                     }
                     else
                     {
                         struct_defs.push_back(new_struct);
-                        debug("Defined struct %s with %d fields, total size %d\\n", 
+                        debug("Defined struct %s with %d fields, total size %d\\n",
                               new_struct.name, (int)new_struct.fields.size(), new_struct.total_size);
                     }
                 }
@@ -1491,7 +1641,7 @@ int genasm(unsigned char *buffer, long long buffer_size, bool check_only, int *l
             }
             else if (0 == strcmp(cmd, "loc"))
             {
-                if(is_delayslot)
+                if (is_delayslot)
                 {
                     is_delayslot = 0;
                     awarn(line, 4120, linebuf);
@@ -1515,7 +1665,7 @@ int genasm(unsigned char *buffer, long long buffer_size, bool check_only, int *l
             }
             else if (0 == strcmp(cmd, "bloc"))
             {
-                if(is_delayslot)
+                if (is_delayslot)
                 {
                     is_delayslot = 0;
                     awarn(line, 4120, linebuf);
@@ -1533,7 +1683,7 @@ int genasm(unsigned char *buffer, long long buffer_size, bool check_only, int *l
             }
             else if (0 == strcmp(cmd, "vma"))
             {
-                if(is_delayslot)
+                if (is_delayslot)
                 {
                     is_delayslot = 0;
                     awarn(line, 4120, linebuf);
@@ -1566,7 +1716,8 @@ int genasm(unsigned char *buffer, long long buffer_size, bool check_only, int *l
                 {
                     aerror(line, 4111, linebuf);
                 }
-                else line -= 1;
+                else
+                    line -= 1;
             }
             else if (0 == strcmp(cmd, "pushloc"))
             {
@@ -1579,7 +1730,7 @@ int genasm(unsigned char *buffer, long long buffer_size, bool check_only, int *l
                     is_delayslot = 0;
                     awarn(line, 4120, linebuf);
                 }
-                if(loc_stack.empty())
+                if (loc_stack.empty())
                     aerror(line, 4112, linebuf);
                 else
                 {
@@ -1598,26 +1749,43 @@ int genasm(unsigned char *buffer, long long buffer_size, bool check_only, int *l
             if (check_only)
             {
                 int len = get_asm_len(body);
-                if(len == -1) aerror(line, 3200, linebuf);
-                else now_loc += len;
+                if (len == -1)
+                    aerror(line, 3200, linebuf);
+                else
+                    now_loc += len;
             }
 
             else
             {
-                if (now_loc >= buffer_size) FATAL(7000);
+                if (now_loc >= buffer_size)
+                    FATAL(7000);
                 int ret = mkasm(buffer + now_loc, body, now_loc + offset);
-                if(ret == -1) aerror(line, 8000, linebuf);
-                else if(ret == -2) aerror(line, 8001, linebuf);
-                else if(ret == -3) aerror(line, 8002, linebuf);
-                else if(ret == -4) aerror(line, 4201, linebuf);
-                else if(ret == -5) aerror(line, 4203, linebuf);
-                else if(ret == -6) aerror(line, 4204, linebuf);
-                else if(ret == -1000) aerror(line, 4200, linebuf);
-                else now_loc += ret;
+                if (ret == -1)
+                    aerror(line, 8000, linebuf);
+                else if (ret == -2)
+                    aerror(line, 8001, linebuf);
+                else if (ret == -3)
+                    aerror(line, 8002, linebuf);
+                else if (ret == -4)
+                    aerror(line, 4201, linebuf);
+                else if (ret == -5)
+                    aerror(line, 4203, linebuf);
+                else if (ret == -6)
+                    aerror(line, 4204, linebuf);
+                else if (ret == -21)
+                    aerror(line, 8003, linebuf);
+                else if (ret == -22)
+                    aerror(line, 8004, linebuf);
+                else if (ret == -23)
+                    aerror(line, 8005, linebuf);
+                else if (ret == -1000)
+                    aerror(line, 4200, linebuf);
+                else
+                    now_loc += ret;
             }
         }
     }
-    if(is_delayslot)
+    if (is_delayslot)
         awarn(line, 4121, linebuf);
 
     return 0;
@@ -1851,6 +2019,9 @@ static struct err_t
     {8000, "无效汇编指令。"},
     {8001, "未知寄存器名。"},
     {8002, "命令语法不正确。"},
+    {8003, "未知的通用寄存器名（GPR）。请检查寄存器拼写是否正确。"},
+    {8004, "未知的协处理器0寄存器名（COP0）。"},
+    {8005, "未知的协处理器1寄存器名（COP1/FPU）。"},
     {9001, "处理LI指令时，所给数值超过可处理的极限。"},
     {9002, "处理对齐请求时，所给数值超过可处理的极限。"},
     {9003, "处理对齐请求时，所给数值不是2的幂。"},
@@ -1866,7 +2037,7 @@ static struct err_t
 void error(int code)
 {
     ++cerror;
-    for (int i = 0; i < (int)sizeof(errs)/(int)sizeof(err_t); ++i)
+    for (int i = 0; i < (int)sizeof(errs) / (int)sizeof(err_t); ++i)
     {
         if (errs[i].code == code)
         {
@@ -1881,7 +2052,7 @@ void error(int code)
 
 void fatal(int code)
 {
-    for (int i = 0; i < (int)sizeof(errs)/(int)sizeof(err_t); ++i)
+    for (int i = 0; i < (int)sizeof(errs) / (int)sizeof(err_t); ++i)
     {
         if (errs[i].code == code)
         {
@@ -1898,7 +2069,7 @@ void warn(int code)
         return;
 
     ++cwarn;
-    for (int i = 0; i < (int)sizeof(errs)/(int)sizeof(err_t); ++i)
+    for (int i = 0; i < (int)sizeof(errs) / (int)sizeof(err_t); ++i)
     {
         if (errs[i].code == code)
         {
@@ -1911,7 +2082,7 @@ void warn(int code)
 
 void info(int code)
 {
-    for (int i = 0; i < (int)sizeof(errs)/(int)sizeof(err_t); ++i)
+    for (int i = 0; i < (int)sizeof(errs) / (int)sizeof(err_t); ++i)
     {
         if (errs[i].code == code)
         {
@@ -1926,7 +2097,7 @@ int show_help(const char *stub)
 {
     puts("Partially assembler for MIPS R5900.\n    Coded by Xiyan_shan");
     puts("部分汇编补丁应用器，RX79专版。\n    编写者：单希研");
-    puts("Version 1.2.0");
+    puts("Version 1.3.0");
     puts("用法 Usage: prtasm (-m [a/d]) -i [input.bin] -o [output.bin] (-s [script.txt] (Options))");
     puts("选项 Options: ");
     puts("-A [asm code]    [测试]立即转换汇编代码到十六进制数据。");
@@ -1938,7 +2109,7 @@ int show_help(const char *stub)
     puts("-l [range]       指定反汇编限定地址(格式：xxx:xxx，16 进制)。（仅当模式为反汇编时可用）");
     puts("-m [a/d]         指定为汇编或反汇编模式。（反汇编时，选项 -s 被忽略。）");
     puts("-d [b/h/w]       将无法处理的指令值以.byte/.half/.word表示。（默认为.word）");
-    //puts("-I               [未实现]指定为交互模式(忽略“-s”选项)。");
+    // puts("-I               [未实现]指定为交互模式(忽略“-s”选项)。");
     puts("-n               将无法解析的指令值输出为INVALID而非d*。");
     puts("-W [code,...]    抑制指定警告码（可重复，支持逗号分隔，如 -W 4103,4121 或 -W W4900）。");
     puts("-r               当越界（如果有指定）时，停止汇编操作。");

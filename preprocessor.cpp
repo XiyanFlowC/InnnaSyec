@@ -279,6 +279,7 @@ void handle_directive(istream& input, const string& line, const string &filename
         string symbol, value;
         ss >> symbol >> value;
         symbols[symbol] = value;
+        cout << ".file " << filename << " " << line_no + 1 << endl;
     } else if (directive == "macro") {
         string macro_name;
         int macro_argc;

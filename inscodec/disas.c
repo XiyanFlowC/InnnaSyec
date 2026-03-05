@@ -186,15 +186,18 @@ int parse_param(const char *para, const char *def, struct instr_t *result) {
             break;
             case '$':
             para = get_next_word(para, buffer);
-            value = index_of(gpr_names, 32, buffer);
+            value = index_of(gpr_names, 32, buffer[0] == '$' ? buffer + 1 : buffer);
+            if(value < 0) return -21; // unknown GPR name
             break;
             case '^':
             para = get_next_word(para, buffer);
-            value = index_of(cop0r_names, 32, buffer);
+            value = index_of(cop0r_names, 32, buffer[0] == '$' ? buffer + 1 : buffer);
+            if(value < 0) return -22; // unknown COP0 register name
             break;
             case '@':
             para = get_next_word(para, buffer);
-            value = index_of(cop1r_names, 32, buffer);
+            value = index_of(cop1r_names, 32, buffer[0] == '$' ? buffer + 1 : buffer);
+            if(value < 0) return -23; // unknown COP1 register name
             break;
             case '#':
             case '&':
