@@ -10,7 +10,7 @@ const char *get_next_word(const char *str, char *buffer) {
     }
 
     while((*str >= 'a' && *str <= 'z') ||
-        (*str >= 'A' && *str <= 'B') ||
+        (*str >= 'A' && *str <= 'Z') ||
         (*str >= '0' && *str <= '9') ||
         (*str == '.'))
     {
@@ -60,7 +60,8 @@ int disas(struct instr_t instr, unsigned int offset, char *buffer) {
     
     char *orip = def.para;
     char *para = para_buf;
-
+    unsigned long long value;
+    int target;
     if(*orip != '_')
     while (*orip != '\0') {
         int type;
@@ -90,8 +91,7 @@ int disas(struct instr_t instr, unsigned int offset, char *buffer) {
             goto wh_end;
         }
 
-        unsigned long long value;
-        int target = _get_target_(++orip);
+        target = _get_target_(++orip);
         switch(target) {
             case 1:
             value = instr.imm;

@@ -5,7 +5,13 @@ CARG=-Wall -I$(SQLITE_HEADER_PATH) -g3
 prtasm.o: prtasm.cpp
 	g++ prtasm.cpp -c -o prtasm.o $(CARG)
 
-prtasm: r5900.o prtasm.o
+codec.o: ./inscodec/codec.cpp
+	g++ ./inscodec/codec.cpp -c -o ./inscodec/codec.o $(CARG)
+
+disas.o: ./inscodec/disas.cpp
+	g++ ./inscodec/disas.cpp -c -o ./inscodec/disas.o $(CARG)
+
+prtasm: disas.o codec.o prtasm.o
 	g++ prtasm.o ./inscodec/codec.o ./inscodec/disas.o -o prtasm $(CARG)
 
 preprocessor: preprocessor.cpp
@@ -35,14 +41,14 @@ bst.o: bst.h bst.c
 isy: r5900.o fragcov.o book.o sqlite3.o isy.c bst.o isy-str.o xyutils.o
 	gcc xyutils.o isy.c r5900.o fragcov.o book.o sqlite3.o isy-str.o bst.o ./inscodec/disas.o ./inscodec/codec.o -o isy $(CARG) -lpthread -lm -ldl
 
-all: prtasm
+all: prtasm preprocessor isy
 
 
 # mipsincs: simpgen mips5900.txt
 # 	./simpgen -i mips5900.txt -o mips5900
 
 clean:
-	rm *.o
+	rm *.o ./inscodec/*.o
 
 cleanall:
-	rm *.o prtasm
+	rm *.o prtasm preprocessor isy
