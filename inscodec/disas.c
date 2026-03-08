@@ -12,7 +12,8 @@ const char *get_next_word(const char *str, char *buffer) {
     while((*str >= 'a' && *str <= 'z') ||
         (*str >= 'A' && *str <= 'Z') ||
         (*str >= '0' && *str <= '9') ||
-        (*str == '.'))
+        (*str == '.') ||
+        (*str == '$'))
     {
         *buffer++ = *str++;
     }

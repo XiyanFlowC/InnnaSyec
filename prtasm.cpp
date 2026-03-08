@@ -10,6 +10,7 @@
 #include <stack>
 #include <vector>
 #include <string>
+#include <unordered_map>
 // #include <map>
 #include <stdio.h>
 
@@ -42,11 +43,20 @@ static FILE *input, *output, *script; // TODO: include 支持，script相关全�
 static char /* *scriptnm,*/ *outputnm;
 static char scriptnm[2048];
 static bool do_invalid = false /*, do_purge = true*/, stop_if_overline = false, stop_firsterr = false, move_only_word = false, stop_at_large_li_la = true;
+static bool allow_write_past_eof = false;
 int cerror = 0, cwarn = 0;
 static std::vector<int> suppressed_warn_codes;
 
 // 存储脚本行以支持stdin和多遍扫描
 static std::vector<std::string> script_lines;
+
+struct image_sink_t
+{
+    FILE *fp;
+    long long size;
+};
+
+static image_sink_t g_image_sink = {NULL, 0};
 
 /******************************
  * 结构体定义存储            *
@@ -111,7 +121,107 @@ void fatal(int code);
 void info(int code);
 int load_script_lines();
 // int check();
-int genasm(unsigned char *buffer, long long buffer_size, bool check_only = false, int *line_idx = nullptr);
+int genasm(long long buffer_size, bool check_only = false, int *line_idx = nullptr);
+
+static int image_seek(unsigned long long offset)
+{
+    if (g_image_sink.fp == NULL)
+        return -1;
+    return fseek(g_image_sink.fp, (long)offset, SEEK_SET);
+}
+
+static int image_extend_to_offset(unsigned long long offset)
+{
+    if (g_image_sink.fp == NULL)
+        return -1;
+    if (offset <= (unsigned long long)g_image_sink.size)
+        return 0;
+
+    if (fseek(g_image_sink.fp, 0, SEEK_END) != 0)
+        return -1;
+    long long cur_end = ftell(g_image_sink.fp);
+    if (cur_end < 0)
+        return -1;
+
+    unsigned long long cur = (unsigned long long)cur_end;
+    static unsigned char zeros[4096] = {0};
+    while (cur < offset)
+    {
+        size_t chunk = (size_t)((offset - cur) > sizeof(zeros) ? sizeof(zeros) : (offset - cur));
+        if (fwrite(zeros, 1, chunk, g_image_sink.fp) != chunk)
+            return -1;
+        cur += chunk;
+    }
+
+    g_image_sink.size = (long long)offset;
+    return 0;
+}
+
+static int image_write_bytes(unsigned long long offset, const void *data, size_t bytes)
+{
+    if (g_image_sink.fp == NULL)
+        return -1;
+    unsigned long long end_pos = offset + bytes;
+    if (end_pos > (unsigned long long)g_image_sink.size)
+    {
+        if (!allow_write_past_eof)
+            return -2;
+        if (image_extend_to_offset(offset) != 0)
+            return -1;
+    }
+    if (image_seek(offset) != 0)
+        return -1;
+    if (fwrite(data, 1, bytes, g_image_sink.fp) != bytes)
+        return -1;
+    if (end_pos > (unsigned long long)g_image_sink.size)
+        g_image_sink.size = (long long)end_pos;
+    return 0;
+}
+
+static int image_read_u32(unsigned long long offset, unsigned int *out)
+{
+    if (g_image_sink.fp == NULL || out == NULL)
+        return -1;
+    if (offset + 4 > (unsigned long long)g_image_sink.size)
+        return -1;
+    if (image_seek(offset) != 0)
+        return -1;
+    return fread(out, 1, 4, g_image_sink.fp) == 4 ? 0 : -1;
+}
+
+static int image_write_u8(unsigned long long offset, unsigned char value)
+{
+    return image_write_bytes(offset, &value, 1);
+}
+
+static int image_write_u16(unsigned long long offset, unsigned short value)
+{
+    return image_write_bytes(offset, &value, 2);
+}
+
+static int image_write_u32(unsigned long long offset, unsigned int value)
+{
+    return image_write_bytes(offset, &value, 4);
+}
+
+static int image_write_u64(unsigned long long offset, unsigned long long value)
+{
+    return image_write_bytes(offset, &value, 8);
+}
+
+static int copy_stream(FILE *src, FILE *dst)
+{
+    if (src == NULL || dst == NULL)
+        return -1;
+    unsigned char chunk[64 * 1024];
+    size_t n = 0;
+    while ((n = fread(chunk, 1, sizeof(chunk), src)) > 0)
+    {
+        if (fwrite(chunk, 1, n, dst) != n)
+            return -1;
+    }
+    return ferror(src) ? -1 : 0;
+}
 
 static int is_warning_suppressed(int code)
 {
@@ -169,9 +279,6 @@ int main(int argc, const char **argv)
                     case 'w':
                         dmode = DM_DW;
                         break;
-                    case 'd':
-                        dmode = DM_DD;
-                        break;
                     default:
                         error(1200);
                         break;
@@ -221,6 +328,12 @@ int main(int argc, const char **argv)
                     stop_at_large_li_la = false;
                     return 0;
                 });
+    lopt_regopt("allow-write-past-eof", '\0', LOPT_FLG_CH_VLD | LOPT_FLG_OPT_VLD,
+                [](const char *stub) -> int
+                {
+                    allow_write_past_eof = true;
+                    return 0;
+                });
     lopt_regopt("help", 'h', LOPT_FLG_CH_VLD | LOPT_FLG_OPT_VLD | LOPT_FLG_STR_VLD, show_help);
 
     int ret = lopt_parse(argc, argv);
@@ -228,7 +341,11 @@ int main(int argc, const char **argv)
     {
         if (ret < 0)
         {
+#ifndef DESC_LANG_EN
             printf("未知命令行参数, 不可辨识的参数：[%s].\n", argv[-ret]);
+#else
+            printf("Unknown command-line argument, unrecognized option: [%s].\n", argv[-ret]);
+#endif
             exit(ret);
         }
         else
@@ -244,15 +361,7 @@ int main(int argc, const char **argv)
 
     fseek(input, 0, SEEK_END);
     long long len = ftell(input);
-    unsigned char *buf = (unsigned char *)malloc(len);
     rewind(input);
-    fread(buf, len, 1, input);
-    rewind(input);
-    // if(do_purge && mode == MODE_SASM) // copy file to clear
-    // {
-    //     fwrite(buf, len, 1, output);
-    //     rewind(output);
-    // }
 
     if (mode == MODE_SDISASM)
     {
@@ -266,7 +375,9 @@ int main(int argc, const char **argv)
         fprintf(output, ".loc %08llX\n", dasm_sta);
         for (unsigned long long i = dasm_sta; i < dasm_end; i += 4)
         {
-            unsigned int cmd = *(unsigned int *)(buf + i);
+            unsigned int cmd = 0;
+            if (fseek(input, (long)i, SEEK_SET) != 0 || fread(&cmd, 1, 4, input) != 4)
+                break;
             instr_t result = DecodeInstruction(cmd);
             if (result.opcode == -1)
             {
@@ -312,26 +423,39 @@ int main(int argc, const char **argv)
         if (load_script_lines() != 0)
             fatal(2004);
 
-        if (0 == genasm(buf, len, true))
-            genasm(buf, len);
+        rewind(input);
+        rewind(output);
+        if (copy_stream(input, output) != 0)
+            fatal(1100);
+        fflush(output);
 
-        if (!cerror)
-            fwrite(buf, len, 1, output);
-        else
+        g_image_sink.fp = output;
+        g_image_sink.size = len;
+
+        if (0 == genasm(len, true))
+            genasm(len);
+
+        if (cerror)
         {
             fclose(output);
             output = NULL;
             remove(outputnm);
         }
 
+        g_image_sink.fp = NULL;
+        g_image_sink.size = 0;
+
+    #ifndef DESC_LANG_EN
         printf("汇编处理结束：%d个错误，%d个警告。\n", cerror, cwarn);
+    #else
+        printf("Assembly process finished: %d error(s), %d warning(s).\n", cerror, cwarn);
+    #endif
     }
 
     if (output)
         fclose(output);
     if (input)
         fclose(input);
-    free(buf);
     // free(scriptnm);
     free(outputnm);
 
@@ -444,16 +568,80 @@ int get_asm_len(const char *src)
 /******************************
  * 汇编标签（位置）信息存储用 *
  ******************************/
-#ifndef LABEL_MAX_COUNT
-#define LABEL_MAX_COUNT 16384
-#endif
-static unsigned long long tag_loc[LABEL_MAX_COUNT], tag_vma[LABEL_MAX_COUNT];
-static char tag_nm[LABEL_MAX_COUNT][128];
-static int tag_p = 0;
+static std::unordered_map<std::string, unsigned long long> tag_vma_map;
+static char current_global_label[128] = "";
+static unsigned long long current_eval_loc = 0;
+static unsigned long long current_eval_vma = 0;
+
+static void set_eval_context(unsigned long long loc, unsigned long long vma)
+{
+    current_eval_loc = loc;
+    current_eval_vma = vma;
+}
+
+static int compose_label_name(const char *raw_name, char *out_name, size_t out_size)
+{
+    if (raw_name == NULL || out_name == NULL || out_size == 0)
+        return 0;
+
+    if (raw_name[0] == '.' && current_global_label[0] != '\0')
+    {
+        int n = snprintf(out_name, out_size, "%s%s", current_global_label, raw_name);
+        return n > 0 && (size_t)n < out_size;
+    }
+
+    strncpy(out_name, raw_name, out_size - 1);
+    out_name[out_size - 1] = '\0';
+    return 1;
+}
+
+static int has_global_scope_for_local_label()
+{
+    return current_global_label[0] != '\0';
+}
+
+static int normalize_label_definition_name(const char *raw_name, char *out_name, size_t out_size)
+{
+    if (!compose_label_name(raw_name, out_name, out_size))
+        return 0;
+
+    if (raw_name != NULL && raw_name[0] != '\0' && raw_name[0] != '.')
+    {
+        strncpy(current_global_label, raw_name, sizeof(current_global_label) - 1);
+        current_global_label[sizeof(current_global_label) - 1] = '\0';
+    }
+
+    return 1;
+}
 
 static int find_label_value(const char *name, unsigned long long *value)
 {
-    // 检查是否为结构体成员访问（StructName.fieldname）
+    if (name != NULL)
+    {
+        if (0 == strcmp(name, "__LOC__"))
+        {
+            *value = current_eval_loc;
+            return 1;
+        }
+        if (0 == strcmp(name, "__VMA__"))
+        {
+            *value = current_eval_vma;
+            return 1;
+        }
+    }
+
+    char resolved_name[128];
+    if (!compose_label_name(name, resolved_name, sizeof(resolved_name)))
+        return 0;
+
+    auto it = tag_vma_map.find(resolved_name);
+    if (it != tag_vma_map.end())
+    {
+        *value = it->second;
+        return 1;
+    }
+
+    // 标签查找失败后，回退为结构体成员访问（StructName.fieldname）
     const char *dot = strchr(name, '.');
     if (dot != NULL)
     {
@@ -466,11 +654,9 @@ static int find_label_value(const char *name, unsigned long long *value)
 
         const char *field_name = dot + 1;
 
-        // 查找结构体定义
         struct_def_t *sdef = find_struct_def(struct_name);
         if (sdef != NULL)
         {
-            // 查找字段
             for (size_t i = 0; i < sdef->fields.size(); ++i)
             {
                 if (0 == strcmp(sdef->fields[i].name, field_name))
@@ -479,16 +665,6 @@ static int find_label_value(const char *name, unsigned long long *value)
                     return 1;
                 }
             }
-        }
-    }
-
-    // 普通标签查找
-    for (int i = 0; i < tag_p; ++i)
-    {
-        if (0 == strcmp(tag_nm[i], name))
-        {
-            *value = tag_vma[i];
-            return 1;
         }
     }
     return 0;
@@ -692,8 +868,9 @@ int is_lbinst(char *nm)
 
 static int is_delayslot = 0;
 
-int mkasm(unsigned char *buf, char *asmb, unsigned long long now_vma)
+int mkasm(unsigned long long now_loc, char *asmb, unsigned long long now_vma)
 {
+    set_eval_context(now_loc, now_vma);
     str_trim_end(asmb);
     char mnemonic[64];
     sscanf(asmb, "%s", mnemonic);
@@ -718,6 +895,7 @@ int mkasm(unsigned char *buf, char *asmb, unsigned long long now_vma)
             return -3;
         str_trim_end(lbl);
         long long lbl_val = 0;
+        set_eval_context(now_loc, now_vma);
         int eval_ret = eval_expr_with_labels(lbl, &lbl_val);
         if (eval_ret == -2)
             return -4;
@@ -753,38 +931,47 @@ mkasm_nparse:
         lbl = str_first_not(lbl + 1, '\r');
         if (lbl == NULL)
             return -3;
-        for (int i = 0; i < tag_p; ++i)
+        str_trim_end(lbl);
+        unsigned long long lbl_vma = 0;
+        if (find_label_value(lbl, &lbl_vma))
         {
-            if (0 == strcmp(tag_nm[i], lbl))
+            instr_t ans;
+            sprintf(lbl, "%llu", lbl_vma);
+            parse_param(str_first_not(asmb + 2, '\r'), "$rt, #im", &ans);
+            int low = ans.imm & 0xffff;
+            ans.opcode = LUI;
+            ans.imm >>= 16;
+            if (low > 0x7fff)
+                ans.imm += 1;
+            // 已禁用危险的“交换指令”逻辑：
+            if(is_delayslot)
             {
-                instr_t ans;
-                sprintf(lbl, "%llu", tag_vma[i]);
-                parse_param(str_first_not(asmb + 2, '\r'), "$rt, #im", &ans);
-                int low = ans.imm & 0xffff;
-                ans.opcode = LUI;
-                ans.imm >>= 16;
-                if (low > 0x7fff)
-                    ans.imm += 1;
-                // 已禁用危险的“交换指令”逻辑：
-                if(is_delayslot)
-                {
-                    *((unsigned int *)buf) = *((unsigned int *)buf - 1);
-                    auto tins = DecodeInstruction(*((unsigned int *)buf - 1));
-                    if(is_lbinst((char*)instructions[tins.opcode].name) == 2)
-                        tins.imm -= 1, *((unsigned int *)buf) = EncodeInstruction(tins);
-                    *((unsigned int *)buf - 1) = EncodeInstruction(ans);
-                }
-                else
-                    *((unsigned int *)buf) = EncodeInstruction(ans);
-                buf += 4;
-                ans.opcode = ADDIU;
-                ans.rs = ans.rt;
-                ans.imm = low > 0x7fff ? -(0x10000 - low) : low;
-                *((unsigned int *)buf) = EncodeInstruction(ans);
-                if (is_delayslot)
-                    --is_delayslot;
-                return 8;
+                if (now_loc < 4)
+                    return -3;
+                unsigned int prev_cmd = 0;
+                if (image_read_u32(now_loc - 4, &prev_cmd) != 0)
+                    return -3;
+                if (image_write_u32(now_loc, prev_cmd) != 0)
+                    return -3;
+                auto tins = DecodeInstruction(prev_cmd);
+                if(is_lbinst((char*)instructions[tins.opcode].name) == 2)
+                    tins.imm -= 1, image_write_u32(now_loc, EncodeInstruction(tins));
+                if (image_write_u32(now_loc - 4, EncodeInstruction(ans)) != 0)
+                    return -3;
             }
+            else
+            {
+                if (image_write_u32(now_loc, EncodeInstruction(ans)) != 0)
+                    return -3;
+            }
+            ans.opcode = ADDIU;
+            ans.rs = ans.rt;
+            ans.imm = low > 0x7fff ? -(0x10000 - low) : low;
+            if (image_write_u32(now_loc + 4, EncodeInstruction(ans)) != 0)
+                return -3;
+            if (is_delayslot)
+                --is_delayslot;
+            return 8;
         }
         return -4;
     }
@@ -817,7 +1004,8 @@ mkasm_nparse:
             {
                 tmp.opcode = LUI;
                 tmp.imm = (imm_u32 >> 16) & 0xffff;
-                *((unsigned int *)buf) = EncodeInstruction(tmp);
+                if (image_write_u32(now_loc, EncodeInstruction(tmp)) != 0)
+                    return -3;
                 if (is_delayslot)
                     --is_delayslot;
                 return 4;
@@ -835,19 +1023,29 @@ mkasm_nparse:
                 // 已禁用危险的“交换指令”逻辑：
                 if(is_delayslot)
                 {
-                    *((unsigned int *)buf) = *((unsigned int *)buf - 1);
-                    auto tins = DecodeInstruction(*((unsigned int *)buf - 1));
+                    if (now_loc < 4)
+                        return -3;
+                    unsigned int prev_cmd = 0;
+                    if (image_read_u32(now_loc - 4, &prev_cmd) != 0)
+                        return -3;
+                    if (image_write_u32(now_loc, prev_cmd) != 0)
+                        return -3;
+                    auto tins = DecodeInstruction(prev_cmd);
                     if(is_lbinst((char*)instructions[tins.opcode].name) == 2)
-                        tins.imm -= 1, *((unsigned int *)buf) = EncodeInstruction(tins);
-                    *((unsigned int *)buf - 1) = EncodeInstruction(tmp);
+                        tins.imm -= 1, image_write_u32(now_loc, EncodeInstruction(tins));
+                    if (image_write_u32(now_loc - 4, EncodeInstruction(tmp)) != 0)
+                        return -3;
                 }
                 else
-                    *((unsigned int *)buf) = EncodeInstruction(tmp);
-                buf += 4;
+                {
+                    if (image_write_u32(now_loc, EncodeInstruction(tmp)) != 0)
+                        return -3;
+                }
                 tmp.opcode = ADDIU;
                 tmp.rs = tmp.rt;
                 tmp.imm = low > 0x7fff ? -(0x10000 - low) : low;
-                *((unsigned int *)buf) = EncodeInstruction(tmp);
+                if (image_write_u32(now_loc + 4, EncodeInstruction(tmp)) != 0)
+                    return -3;
                 if (is_delayslot)
                     --is_delayslot;
                 return 8;
@@ -864,26 +1062,37 @@ mkasm_nparse:
                 // 已禁用危险的“交换指令”逻辑：
                 if(is_delayslot)
                 {
-                    *((unsigned int *)buf) = *((unsigned int *)buf - 1);
-                    auto tins = DecodeInstruction(*((unsigned int *)buf - 1));
+                    if (now_loc < 4)
+                        return -3;
+                    unsigned int prev_cmd = 0;
+                    if (image_read_u32(now_loc - 4, &prev_cmd) != 0)
+                        return -3;
+                    if (image_write_u32(now_loc, prev_cmd) != 0)
+                        return -3;
+                    auto tins = DecodeInstruction(prev_cmd);
                     if(is_lbinst((char*)instructions[tins.opcode].name) == 2)
-                        tins.imm -= 1, *((unsigned int *)buf) = EncodeInstruction(tins);
-                    *((unsigned int *)buf - 1) = EncodeInstruction(tmp);
+                        tins.imm -= 1, image_write_u32(now_loc, EncodeInstruction(tins));
+                    if (image_write_u32(now_loc - 4, EncodeInstruction(tmp)) != 0)
+                        return -3;
                 }
                 else
-                    *((unsigned int *)buf) = EncodeInstruction(tmp);
-                buf += 4;
+                {
+                    if (image_write_u32(now_loc, EncodeInstruction(tmp)) != 0)
+                        return -3;
+                }
                 tmp.opcode = ORI;
                 tmp.rs = tmp.rt;
                 tmp.imm = low;
-                *((unsigned int *)buf) = EncodeInstruction(tmp);
+                if (image_write_u32(now_loc + 4, EncodeInstruction(tmp)) != 0)
+                    return -3;
                 if (is_delayslot)
                     --is_delayslot;
                 return 8;
             }
             tmp.opcode = ADDIU;
             tmp.rs = 0;
-            *((unsigned int *)buf) = EncodeInstruction(tmp);
+            if (image_write_u32(now_loc, EncodeInstruction(tmp)) != 0)
+                return -3;
             if (is_delayslot)
                 --is_delayslot;
             return 4;
@@ -895,7 +1104,8 @@ mkasm_nparse:
                 return -1;
             ans.opcode = move_only_word ? ADDU : DADDU;
             ans.rt = 0; // zero
-            *((unsigned int *)buf) = EncodeInstruction(ans);
+            if (image_write_u32(now_loc, EncodeInstruction(ans)) != 0)
+                return -3;
             if (is_delayslot)
                 --is_delayslot;
             return 4;
@@ -907,7 +1117,8 @@ mkasm_nparse:
                 return -1;
             ans.opcode = DADDU;
             ans.rt = 0; // zero
-            *((unsigned int *)buf) = EncodeInstruction(ans);
+            if (image_write_u32(now_loc, EncodeInstruction(ans)) != 0)
+                return -3;
             if (is_delayslot)
                 --is_delayslot;
             return 4;
@@ -918,7 +1129,8 @@ mkasm_nparse:
                 return -1;
             ans.opcode = BEQ;
             ans.rs = ans.rt = 0; // zero (beq zero, zero, &im)
-            *((unsigned int *)buf) = EncodeInstruction(ans);
+            if (image_write_u32(now_loc, EncodeInstruction(ans)) != 0)
+                return -3;
             if (is_delayslot)
                 --is_delayslot;
             return 4;
@@ -951,7 +1163,7 @@ mkasm_nparse:
             p++;
 
             // 解析值列表
-            unsigned char *write_ptr = buf;
+            unsigned long long write_off = now_loc;
             for (size_t field_idx = 0; field_idx < sdef->fields.size(); ++field_idx)
             {
                 p = str_first_not(p, '\r');
@@ -973,6 +1185,7 @@ mkasm_nparse:
 
                 // 求值
                 long long value = 0;
+                set_eval_context(write_off, now_vma + (write_off - now_loc));
                 int eval_ret = eval_expr_with_labels(expr_buf, &value);
                 if (eval_ret != 0)
                     return -3;
@@ -982,19 +1195,23 @@ mkasm_nparse:
                 switch (field.size)
                 {
                 case 1:
-                    *write_ptr = (unsigned char)value;
+                    if (image_write_u8(write_off, (unsigned char)value) != 0)
+                        return -3;
                     break;
                 case 2:
-                    *((unsigned short *)write_ptr) = (unsigned short)value;
+                    if (image_write_u16(write_off, (unsigned short)value) != 0)
+                        return -3;
                     break;
                 case 4:
-                    *((unsigned int *)write_ptr) = (unsigned int)value;
+                    if (image_write_u32(write_off, (unsigned int)value) != 0)
+                        return -3;
                     break;
                 case 8:
-                    *((unsigned long long *)write_ptr) = (unsigned long long)value;
+                    if (image_write_u64(write_off, (unsigned long long)value) != 0)
+                        return -3;
                     break;
                 }
-                write_ptr += field.size;
+                write_off += field.size;
 
                 // 移动到下一个值
                 p = delim;
@@ -1026,7 +1243,8 @@ mkasm_nparse:
         if (ret)
             return -3;
 
-        *((unsigned int *)buf) = EncodeInstruction(ans);
+        if (image_write_u32(now_loc, EncodeInstruction(ans)) != 0)
+            return -3;
         if (is_delayslot)
             --is_delayslot;
         return 4;
@@ -1131,7 +1349,6 @@ int load_script_lines()
 /**
  * 解析并处理逗号分隔的数据定义值（.byte/.half/.word/.dword）
  * @param src 源字符串（从指令名之后开始）
- * @param buffer 写入缓冲区
  * @param now_loc 当前写入位置的指针（会被更新）
  * @param buffer_size 缓冲区大小
  * @param data_size 单个数据项的字节数（1/2/4/8）
@@ -1140,8 +1357,8 @@ int load_script_lines()
  * @param linebuf 当前行内容（用于错误报告）
  * @return 处理的数据项数量
  */
-static int parse_comma_separated_data(const char *src, unsigned char *buffer,
-                                      unsigned long long *now_loc, long long buffer_size,
+static int parse_comma_separated_data(const char *src,
+                                      unsigned long long *now_loc, long long buffer_size, long long offset,
                                       int data_size, bool check_only,
                                       int line, const char *linebuf)
 {
@@ -1201,6 +1418,7 @@ static int parse_comma_separated_data(const char *src, unsigned char *buffer,
 
             // 求值并范围检查
             str_trim_end(expr_buf);
+            set_eval_context(*now_loc, (unsigned long long)((long long)*now_loc + offset));
             int eval_ret = eval_expr_with_labels(expr_buf, &expr_val);
             if (eval_ret == -2)
             {
@@ -1216,7 +1434,7 @@ static int parse_comma_separated_data(const char *src, unsigned char *buffer,
             tmp.i64 = expr_val;
 
             // 范围检查和写入
-            if (*now_loc >= (unsigned long long)buffer_size)
+            if (!allow_write_past_eof && *now_loc >= (unsigned long long)buffer_size)
             {
                 afatal(line, 7000, linebuf);
             }
@@ -1226,23 +1444,27 @@ static int parse_comma_separated_data(const char *src, unsigned char *buffer,
             case 1:
                 if (tmp.i64 < -128 || tmp.i64 > 255)
                     awarn(line, 4109, linebuf);
-                *(buffer + *now_loc) = tmp.u8;
+                if (image_write_u8(*now_loc, tmp.u8) != 0)
+                    afatal(line, 7000, linebuf);
                 *now_loc += 1;
                 break;
             case 2:
                 if (tmp.i64 < -32768 || tmp.i64 > 65535)
                     awarn(line, 4109, linebuf);
-                *((unsigned short *)(buffer + *now_loc)) = tmp.u16;
+                if (image_write_u16(*now_loc, tmp.u16) != 0)
+                    afatal(line, 7000, linebuf);
                 *now_loc += 2;
                 break;
             case 4:
                 if (tmp.i64 < -2147483648LL || tmp.i64 > 4294967295LL)
                     awarn(line, 4109, linebuf);
-                *((unsigned int *)(buffer + *now_loc)) = tmp.u32;
+                if (image_write_u32(*now_loc, tmp.u32) != 0)
+                    afatal(line, 7000, linebuf);
                 *now_loc += 4;
                 break;
             case 8:
-                *((unsigned long long *)(buffer + *now_loc)) = tmp.u64;
+                if (image_write_u64(*now_loc, tmp.u64) != 0)
+                    afatal(line, 7000, linebuf);
                 *now_loc += 8;
                 break;
             }
@@ -1254,7 +1476,7 @@ static int parse_comma_separated_data(const char *src, unsigned char *buffer,
     return count;
 }
 
-int genasm(unsigned char *buffer, long long buffer_size, bool check_only, int *line_idx)
+int genasm(long long buffer_size, bool check_only, int *line_idx)
 {
     static char linebuf[4096];
     unsigned long long now_loc = 0, galign = 0, warn_loc = ~0x0;
@@ -1263,6 +1485,9 @@ int genasm(unsigned char *buffer, long long buffer_size, bool check_only, int *l
     static char logic_filename[2048];
     int fsret = 0;
     std::stack<unsigned long long> loc_stack;
+    if (check_only)
+        tag_vma_map.clear();
+    current_global_label[0] = '\0';
 
     // 从script_lines中读取行
     for (size_t script_line_idx = 0; script_line_idx < script_lines.size(); ++script_line_idx)
@@ -1277,6 +1502,7 @@ int genasm(unsigned char *buffer, long long buffer_size, bool check_only, int *l
         if (fsret == 0)
             continue; // 空行
 
+        set_eval_context(now_loc, (unsigned long long)((long long)now_loc + offset));
         debug("%d, %llX : %s\n", line, now_loc, linebuf);
 
         int flg = 0;
@@ -1331,22 +1557,31 @@ int genasm(unsigned char *buffer, long long buffer_size, bool check_only, int *l
         if (flg)
             aerror(line, 3004, linebuf);
 
-        if (check_only && body != linebuf) // 有标签，要处理
+        if (body != linebuf) // 有标签，要处理
         {
             char *str = str_first_not(linebuf, '\r');
             int count;
-            if (tag_p >= LABEL_MAX_COUNT - 1)
-                FATAL(3000);
-            tag_loc[tag_p] = now_loc;
-            tag_vma[tag_p] = now_loc + offset;
-            if ((count = get_term(tag_nm[tag_p], str, ':')) >= 128)
+            char raw_label[128];
+            char normalized_label[128];
+            if ((count = get_term(raw_label, str, ':')) >= 128)
                 FATAL(3001);
-            if (count != count_term(tag_nm[tag_p], ' ')) // 确保标签中没有空格
+            if (count != count_term(raw_label, ' ')) // 确保标签中没有空格
                 ERROR(3002);
-            if (count != count_term(tag_nm[tag_p++], '\t')) // 确保标签中没有制表符
+            if (count != count_term(raw_label, '\t')) // 确保标签中没有制表符
                 ERROR(3003);
 
-            debug("%16s: %llX\n", tag_nm[tag_p - 1], tag_vma[tag_p - 1]);
+            if (raw_label[0] == '.' && !has_global_scope_for_local_label())
+                ERROR(3005);
+
+            if (!normalize_label_definition_name(raw_label, normalized_label, sizeof(normalized_label)))
+                FATAL(3001);
+
+            if (check_only)
+            {
+                if (tag_vma_map.find(normalized_label) == tag_vma_map.end())
+                    tag_vma_map[normalized_label] = now_loc + offset;
+                debug("%16s: %llX\n", normalized_label, tag_vma_map[normalized_label]);
+            }
         }
 
         // 常规指令字处理
@@ -1377,35 +1612,72 @@ int genasm(unsigned char *buffer, long long buffer_size, bool check_only, int *l
             }
             else if (0 == strcmp(cmd, "byte"))
             {
-                int count = parse_comma_separated_data(body + 5, buffer, &now_loc,
-                                                       buffer_size, 1, check_only,
+                int count = parse_comma_separated_data(body + 5, &now_loc,
+                                                       buffer_size, offset, 1, check_only,
                                                        line, linebuf);
                 if (check_only)
                     now_loc += count;
             }
             else if (0 == strcmp(cmd, "half"))
             {
-                int count = parse_comma_separated_data(body + 5, buffer, &now_loc,
-                                                       buffer_size, 2, check_only,
+                int count = parse_comma_separated_data(body + 5, &now_loc,
+                                                       buffer_size, offset, 2, check_only,
                                                        line, linebuf);
                 if (check_only)
                     now_loc += count * 2;
             }
             else if (0 == strcmp(cmd, "word"))
             {
-                int count = parse_comma_separated_data(body + 5, buffer, &now_loc,
-                                                       buffer_size, 4, check_only,
+                int count = parse_comma_separated_data(body + 5, &now_loc,
+                                                       buffer_size, offset, 4, check_only,
                                                        line, linebuf);
                 if (check_only)
                     now_loc += count * 4;
             }
             else if (0 == strcmp(cmd, "dword"))
             {
-                int count = parse_comma_separated_data(body + 6, buffer, &now_loc,
-                                                       buffer_size, 8, check_only,
+                int count = parse_comma_separated_data(body + 6, &now_loc,
+                                                       buffer_size, offset, 8, check_only,
                                                        line, linebuf);
                 if (check_only)
                     now_loc += count * 8;
+            }
+            else if (0 == strcmp(cmd, "space"))
+            {
+                const char *expr = str_first_not(body + 6, '\r');
+                if (expr == NULL)
+                {
+                    aerror(line, 4113, linebuf);
+                }
+                else
+                {
+                    long long n = 0;
+                    set_eval_context(now_loc, (unsigned long long)((long long)now_loc + offset));
+                    int eval_ret = eval_expr_with_labels(expr, &n);
+                    if (eval_ret != 0 || n < 0)
+                    {
+                        aerror(line, 4113, linebuf);
+                    }
+                    else if (check_only)
+                    {
+                        now_loc += (unsigned long long)n;
+                    }
+                    else
+                    {
+                        static unsigned char zeros[4096] = {0};
+                        unsigned long long remain = (unsigned long long)n;
+                        while (remain > 0)
+                        {
+                            size_t chunk = (size_t)(remain > sizeof(zeros) ? sizeof(zeros) : remain);
+                            if (!allow_write_past_eof && now_loc + chunk > (unsigned long long)buffer_size)
+                                FATAL(7000);
+                            if (image_write_bytes(now_loc, zeros, chunk) != 0)
+                                FATAL(7000);
+                            now_loc += chunk;
+                            remain -= chunk;
+                        }
+                    }
+                }
             }
             else if (0 == strcmp(cmd, "qword"))
             {
@@ -1440,15 +1712,16 @@ int genasm(unsigned char *buffer, long long buffer_size, bool check_only, int *l
                 {
                     if (*sta == '\\')
                     {
-                        int esc_len = process_escape_char(sta,
-                                                          (check_only ? NULL : (buffer + now_loc)),
-                                                          check_only);
+                        unsigned char esc_ch = 0;
+                        int esc_len = process_escape_char(sta, &esc_ch, check_only);
                         if (esc_len < 0)
                         {
                             aerror(line, 4101, linebuf); // 未知转义序列
                             break;
                         }
-                        if (!check_only && now_loc >= buffer_size)
+                        if (!check_only && !allow_write_past_eof && now_loc >= (unsigned long long)buffer_size)
+                            FATAL(7000);
+                        if (!check_only && image_write_u8(now_loc, esc_ch) != 0)
                             FATAL(7000);
                         now_loc++;
                         sta += esc_len;
@@ -1461,9 +1734,10 @@ int genasm(unsigned char *buffer, long long buffer_size, bool check_only, int *l
                     {
                         if (!check_only)
                         {
-                            if (now_loc >= buffer_size)
+                            if (!allow_write_past_eof && now_loc >= (unsigned long long)buffer_size)
                                 FATAL(7000);
-                            *(buffer + now_loc) = *sta;
+                            if (image_write_u8(now_loc, (unsigned char)*sta) != 0)
+                                FATAL(7000);
                         }
                         now_loc++;
                         sta++;
@@ -1489,15 +1763,16 @@ int genasm(unsigned char *buffer, long long buffer_size, bool check_only, int *l
                 {
                     if (*sta == '\\')
                     {
-                        int esc_len = process_escape_char(sta,
-                                                          (check_only ? NULL : (buffer + now_loc)),
-                                                          check_only);
+                        unsigned char esc_ch = 0;
+                        int esc_len = process_escape_char(sta, &esc_ch, check_only);
                         if (esc_len < 0)
                         {
                             aerror(line, 4101, linebuf); // 未知转义序列
                             break;
                         }
-                        if (!check_only && now_loc >= buffer_size)
+                        if (!check_only && !allow_write_past_eof && now_loc >= (unsigned long long)buffer_size)
+                            FATAL(7000);
+                        if (!check_only && image_write_u8(now_loc, esc_ch) != 0)
                             FATAL(7000);
                         now_loc++;
                         sta += esc_len;
@@ -1510,9 +1785,10 @@ int genasm(unsigned char *buffer, long long buffer_size, bool check_only, int *l
                     {
                         if (!check_only)
                         {
-                            if (now_loc >= buffer_size)
+                            if (!allow_write_past_eof && now_loc >= (unsigned long long)buffer_size)
                                 FATAL(7000);
-                            *(buffer + now_loc) = *sta;
+                            if (image_write_u8(now_loc, (unsigned char)*sta) != 0)
+                                FATAL(7000);
                         }
                         now_loc++;
                         sta++;
@@ -1524,9 +1800,10 @@ int genasm(unsigned char *buffer, long long buffer_size, bool check_only, int *l
                 // 添加空终止符
                 if (!check_only)
                 {
-                    if (now_loc >= buffer_size)
+                    if (!allow_write_past_eof && now_loc >= (unsigned long long)buffer_size)
                         FATAL(7000);
-                    *(buffer + now_loc) = '\0';
+                    if (image_write_u8(now_loc, '\0') != 0)
+                        FATAL(7000);
                 }
                 now_loc++;
 
@@ -1781,9 +2058,13 @@ int genasm(unsigned char *buffer, long long buffer_size, bool check_only, int *l
 
             else
             {
-                if (now_loc >= buffer_size)
+                int asm_len = get_asm_len(body);
+                if (!allow_write_past_eof && asm_len > 0 && now_loc + (unsigned long long)asm_len > (unsigned long long)buffer_size)
                     FATAL(7000);
-                int ret = mkasm(buffer + now_loc, body, now_loc + offset);
+                if (!allow_write_past_eof && now_loc >= (unsigned long long)buffer_size)
+                    FATAL(7000);
+                set_eval_context(now_loc, (unsigned long long)((long long)now_loc + offset));
+                int ret = mkasm(now_loc, body, now_loc + offset);
                 if (ret == -1)
                     aerror(line, 8000, linebuf);
                 else if (ret == -2)
@@ -1802,6 +2083,8 @@ int genasm(unsigned char *buffer, long long buffer_size, bool check_only, int *l
                     aerror(line, 8004, linebuf);
                 else if (ret == -23)
                     aerror(line, 8005, linebuf);
+                else if (ret == -7)
+                    afatal(line, 7000, linebuf);
                 else if (ret == -1000)
                     aerror(line, 4200, linebuf);
                 else
@@ -1854,7 +2137,7 @@ int handle_o(const char *filename)
     if (filename == NULL)
         fatal(1901);
 
-    output = fopen(filename, mode == MODE_SASM ? "wb" : "w");
+    output = fopen(filename, mode == MODE_SASM ? "wb+" : "w");
     outputnm = strdup(filename);
     if (output == NULL)
     {
@@ -1976,8 +2259,9 @@ static struct err_t
 {
     int code;
     const char *msg;
-} errs[] = {
-    {0, "操作正常结束。"},
+} errs[] = 
+#ifndef DESC_LANG_EN
+    {{0, "操作正常结束。"},
     {1000, "早已打开输入文件。"},
     {1010, "早已打开输出文件。"},
     {1100, "无法打开输入文件。"},
@@ -1999,6 +2283,7 @@ static struct err_t
     {3002, "标签中有空格。"},
     {3003, "标签中有制表符。"},
     {3004, "字符串定义中有换行符"},
+    {3005, "局部标签缺少全局作用域。请先定义一个全局标签。"},
     {3100, "一次解析时发生异常。对齐指令参数数量不正确。"},
     {3101, "一次解析时发生异常。字符串定义中有换行符。"},
     {3102, "一次解析时发生异常。字符串自对齐指令参数不正确。期待一个10进制数。"},
@@ -2027,6 +2312,7 @@ static struct err_t
     {4110, "二次解析时发生异常。汇编器指令解析失败。不是有效的汇编器控制指令。"},
     {4111, "解析时失败。.file 指令的参数数目不符合预期。"},
     {4112, "解析时失败。.poploc 指令在空栈上操作。"},
+    {4113, "解析时失败。.space 指令参数不正确。期待一个非负整数表达式。"},
     {4120, "二次解析时发现异常。改变处理位置时仍在等待解析延迟槽指令。检查最后的跳转指令延迟槽定义。"},
     {4121, "二次解析时发现异常。处理结束时仍在等待解析延迟槽指令。检查最后的跳转指令延迟槽定义。"},
     {4130, "二次解析时发现异常。数字定义格式不正确或没有定义。"},
@@ -2039,7 +2325,7 @@ static struct err_t
     {4204, "二次解析时发现异常。延迟槽中禁止使用会展开为多条指令的伪指令。请手动展开为真实指令。"},
     {4900, "二次解析时发生异常。容纳块溢出。"},
     {4910, "二次解析时发现异常。换行符未能取得LF。检查文件格式或操作系统。"},
-    {7000, "缓冲区错误。写错误：指定的地址超过了文件大小或所分配的缓冲区。"},
+    {7000, "写入越界：目标地址超过当前文件末尾。可使用 --allow-write-past-eof 允许自动扩展文件。"},
     {8000, "无效汇编指令。"},
     {8001, "未知寄存器名。"},
     {8002, "命令语法不正确。"},
@@ -2057,6 +2343,91 @@ static struct err_t
     {9505, ".qword（128位数定义）功能未实现。"},
     {9506, "galign 只对字符串定义有效。不建议使用。"},
     {9999, "索引未命中。"}};
+#else
+{
+    {0, "Operation completed successfully."},
+    {1000, "Input file is already open."},
+    {1010, "Output file is already open."},
+    {1100, "Failed to open input file."},
+    {1101, "Input file is required but was not opened."},
+    {1110, "Failed to open output file."},
+    {1111, "Output file is required but was not opened."},
+    {1200, "Unknown output fallback mode. Check -d option value."},
+    {1500, "The newly specified file will be ignored."},
+    {1902, "Command-line parsing error. See details below."},
+    {1901, "Command-line parsing error: missing required argument."},
+    {1900, "Command-line parsing error. See details above."},
+    {2000, "Disassembly failed: invalid -d option."},
+    {2001, "Input file is not specified."},
+    {2002, "Output file is not specified."},
+    {2003, "Script file is not specified."},
+    {2004, "Unexpected error while reading script file."},
+    {3000, "Too many labels (default: 16384). Rebuild with a larger LABEL_MAX_COUNT if needed."},
+    {3001, "Label length exceeds allowed limit (128)."},
+    {3002, "Label contains spaces."},
+    {3003, "Label contains tab characters."},
+    {3004, "String definition contains a newline."},
+    {3005, "Local label has no global scope. Define a global label first."},
+    {3100, "First pass error: invalid argument count for alignment directive."},
+    {3101, "First pass error: string definition contains a newline."},
+    {3102, "First pass error: invalid argument for string auto-align directive. Expected a decimal number."},
+    {3103, "First pass error: string auto-align argument is not a multiple of 2."},
+    {3104, "First pass error: invalid argument for offset directive. Expected a hexadecimal integer."},
+    {3105, "First pass error: invalid arguments for location directive. Expected 1-2 hexadecimal integers."},
+    {3106, "First pass error: invalid arguments for reserve block directive. Expected 2 hexadecimal integers."},
+    {3107, "First pass error: empty assembler directive."},
+    {3108, "First pass error: invalid arguments for virtual address directive. Expected 1-2 hexadecimal integers."},
+    {3109, "First pass error: string definition is missing opening or closing quote."},
+    {3110, "First pass error: assembler directive parse failed. Not a valid control directive."},
+    {3199, "First pass fatal error: string auto-align argument is 0."},
+    {3200, "First pass error: assembly instruction parse failed."},
+    {3900, "First pass error: reserve block overflow."},
+    {3910, "First pass error: failed to get CR in line ending. Check file format or OS."},
+    {4100, "Second pass error: invalid argument count for alignment directive."},
+    {4101, "Second pass error: string definition contains a newline."},
+    {4102, "Second pass error: invalid argument for string auto-align directive. Expected a decimal number."},
+    {4103, "Second pass error: string auto-align argument is not a multiple of 2."},
+    {4104, "Second pass error: invalid argument for offset directive. Expected a hexadecimal integer."},
+    {4105, "Second pass error: invalid arguments for location directive. Expected 1-2 hexadecimal integers."},
+    {4106, "Second pass error: invalid arguments for reserve block directive. Expected 2 hexadecimal integers."},
+    {4107, "Second pass error: empty assembler directive."},
+    {4108, "Second pass error: invalid arguments for virtual address directive. Expected 1-2 hexadecimal integers."},
+    {4109, "Second pass error: defined data size exceeds reserved space."},
+    {4110, "Second pass error: assembler directive parse failed. Not a valid control directive."},
+    {4111, "Parse failed: .file directive argument count is invalid."},
+    {4112, "Parse failed: .poploc was used on an empty stack."},
+    {4113, "Parse failed: invalid .space argument. Expected a non-negative integer expression."},
+    {4120, "Second pass error: changed processing location while still waiting for a delay-slot instruction."},
+    {4121, "Second pass error: processing ended while still waiting for a delay-slot instruction."},
+    {4130, "Second pass error: invalid numeric definition format or value missing."},
+    {4131, "Second pass error: failed to locate label start while parsing label."},
+    {4132, "Second pass error: referenced label does not exist."},
+    {4199, "Second pass fatal error: string auto-align argument is 0."},
+    {4200, "Second pass error: instruction line has trailing unparsed content."},
+    {4201, "Second pass error: specified label does not exist."},
+    {4203, "Second pass error: jump/branch instruction found in delay slot."},
+    {4204, "Second pass error: pseudo-instructions that expand to multiple instructions are not allowed in delay slots."},
+    {4900, "Second pass error: reserve block overflow."},
+    {4910, "Second pass error: failed to get LF in line ending. Check file format or OS."},
+    {7000, "Write out of range: target address exceeds current file end. Use --allow-write-past-eof to allow auto-extension."},
+    {8000, "Invalid assembly instruction."},
+    {8001, "Unknown register name."},
+    {8002, "Invalid instruction syntax."},
+    {8003, "Unknown general-purpose register (GPR) name."},
+    {8004, "Unknown COP0 register name."},
+    {8005, "Unknown COP1/FPU register name."},
+    {9001, "LI value exceeds supported range."},
+    {9002, "Alignment value exceeds supported range."},
+    {9003, "Alignment value is not a power of two."},
+    {9010, "Struct definition error: struct name is empty."},
+    {9011, "Struct definition error: struct name already exists."},
+    {9012, "Struct definition error: unknown field type. Valid types: byte, half, word, dword."},
+    {9013, "Struct definition error: struct must contain at least one field."},
+    {9501, "Negative-value case for LI pseudo-instruction is not implemented."},
+    {9505, ".qword (128-bit data definition) is not implemented."},
+    {9506, "galign is only valid for string definitions and is not recommended."},
+    {9999, "Index not found."}};
+#endif
 
 void error(int code)
 {
@@ -2119,9 +2490,10 @@ void info(int code)
 
 int show_help(const char *stub)
 {
+#ifndef DESC_LANG_EN
     puts("Partially assembler for MIPS R5900.\n    Coded by Xiyan_shan");
     puts("部分汇编补丁应用器，RX79专版。\n    编写者：单希研");
-    puts("Version 1.3.0");
+    puts("Version 1.4.0");
     puts("用法 Usage: prtasm (-m [a/d]) -i [input.bin] -o [output.bin] (-s [script.txt] (Options))");
     puts("选项 Options: ");
     puts("-A [asm code]    [测试]立即转换汇编代码到十六进制数据。");
@@ -2139,10 +2511,38 @@ int show_help(const char *stub)
     puts("-r               当越界（如果有指定）时，停止汇编操作。");
     puts("-e               当第一个错误发生时，停止运行。");
     puts("--move-only-word move伪指令只移动低32位寄存器（生成ADDU而非DADDU）");
+    puts("--enable-delay-slot-large-li-la 允许在延迟槽中使用可能展开为两条的LI/LA伪指令（高风险）");
+    puts("--allow-write-past-eof 允许写到文件末尾之外，并自动扩展文件（默认关闭）");
     // puts("--no-purge      指定不要复制输入文件到输出文件。");
     puts("例: \n\
     prtasm -i test.elf -o mod.elf -s mod.mips\n\
     prtasm -m d -i test.elf -o dis.mips -l 1050:135c --invalid-ops\n\
-    prtasm -m a -i test.elf -o mod.elf -s mod.mips --no-purge");
+    prtasm -m a -i test.elf -o mod.elf -s mod.mips --move-only-word");
+#else
+    puts("Partially assembler for MIPS R5900.\n    Coded by Xiyan_shan");
+    puts("Version 1.4.0");
+    puts("Usage: prtasm (-m [a/d]) -i [input.bin] -o [output.bin] (-s [script.txt] (Options))");
+    puts("Options:");
+    puts("-A [asm code]    [Test] Convert assembly code to hexadecimal machine code immediately.");
+    puts("-D [hex code]    [Test] Disassemble one hexadecimal instruction value immediately.");
+    puts("-i [input.bin]   Specify input file.");
+    puts("-o [output.bin]  Specify output file.");
+    puts("-s [script.txt]  Specify script file.");
+    puts("-S               Read script from standard input (assembler mode only).");
+    puts("-l [range]       Set disassembly address range (format: xxx:xxx, hexadecimal; disassembler mode only).");
+    puts("-m [a/d]         Select assembler or disassembler mode. (In disassembler mode, -s is ignored.)");
+    puts("-d [b/h/w]       Emit unknown instruction values as .byte/.half/.word. (default: .word)");
+    puts("-n               Emit unrecognized instruction values as INVALID instead of data directives.");
+    puts("-W [code,...]    Suppress warning codes (repeatable, comma-separated; e.g. -W 4103,4121 or -W W4900).");
+    puts("-r               Stop assembling when an out-of-range condition occurs (if range is specified).");
+    puts("-e               Stop at the first error.");
+    puts("--move-only-word Make MOVE pseudo-instruction use low 32-bit move (ADDU instead of DADDU).");
+    puts("--enable-delay-slot-large-li-la Allow LI/LA pseudo-instructions that may expand to two instructions in delay slots (high risk).");
+    puts("--allow-write-past-eof Allow writes past end-of-file and auto-extend output file (disabled by default).");
+    puts("Examples:\n\
+    prtasm -i test.elf -o mod.elf -s mod.mips\n\
+    prtasm -m d -i test.elf -o dis.mips -l 1050:135c --invalid-ops\n\
+    prtasm -m a -i test.elf -o mod.elf -s mod.mips --move-only-word");
+#endif
     return 0;
 }
