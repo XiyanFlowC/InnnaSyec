@@ -11,6 +11,8 @@
 #include <vector>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
+#include <algorithm>
 // #include <map>
 #include <stdio.h>
 
@@ -41,6 +43,7 @@ static int dmode = 2;
 static unsigned long long dasm_sta = 0x0, dasm_end = 0xffffffffffffffff;
 static FILE *input, *output, *script; // TODO: include 支持，script相关全部重写
 static char /* *scriptnm,*/ *outputnm;
+static char *symnm;
 static char scriptnm[2048];
 static bool do_invalid = false /*, do_purge = true*/, stop_if_overline = false, stop_firsterr = false, move_only_word = false, stop_at_large_li_la = true;
 static bool allow_write_past_eof = false;
@@ -108,6 +111,7 @@ static struct_def_t *find_struct_def(const char *name)
 int handle_i(const char *filename);
 int handle_o(const char *filename);
 int handle_s(const char *filename);
+int handle_sym(const char *filename);
 int handle_W(const char *warnspec);
 int handle_D(const char *hexstr);
 int handle_A(const char *assembly);
@@ -209,6 +213,8 @@ static int image_write_u64(unsigned long long offset, unsigned long long value)
     return image_write_bytes(offset, &value, 8);
 }
 
+static int export_sym_file(const char *filename);
+
 static int copy_stream(FILE *src, FILE *dst)
 {
     if (src == NULL || dst == NULL)
@@ -309,6 +315,7 @@ int main(int argc, const char **argv)
     lopt_regopt("input", 'i', LOPT_FLG_CH_VLD | LOPT_FLG_OPT_VLD | LOPT_FLG_STR_VLD, handle_i);
     lopt_regopt("output", 'o', LOPT_FLG_CH_VLD | LOPT_FLG_OPT_VLD | LOPT_FLG_STR_VLD, handle_o);
     lopt_regopt("script", 's', LOPT_FLG_CH_VLD | LOPT_FLG_OPT_VLD | LOPT_FLG_STR_VLD, handle_s);
+    lopt_regopt("sym", '\0', LOPT_FLG_OPT_VLD | LOPT_FLG_STR_VLD, handle_sym);
     lopt_regopt("scriptstdin", 'S', LOPT_FLG_CH_VLD | LOPT_FLG_OPT_VLD | LOPT_FLG_STR_VLD,
                 [](const char *stub) -> int
                 {
@@ -441,6 +448,16 @@ int main(int argc, const char **argv)
             output = NULL;
             remove(outputnm);
         }
+        else if (symnm != NULL)
+        {
+            if (export_sym_file(symnm) != 0)
+            {
+                int err = errno;
+                error(1120);
+                puts(strerror(err));
+                ++cerror;
+            }
+        }
 
         g_image_sink.fp = NULL;
         g_image_sink.size = 0;
@@ -458,6 +475,7 @@ int main(int argc, const char **argv)
         fclose(input);
     // free(scriptnm);
     free(outputnm);
+    free(symnm);
 
     return cerror;
 }
@@ -569,9 +587,47 @@ int get_asm_len(const char *src)
  * 汇编标签（位置）信息存储用 *
  ******************************/
 static std::unordered_map<std::string, unsigned long long> tag_vma_map;
+static std::unordered_set<std::string> global_label_set;
 static char current_global_label[128] = "";
 static unsigned long long current_eval_loc = 0;
 static unsigned long long current_eval_vma = 0;
+
+static int export_sym_file(const char *filename)
+{
+    if (filename == NULL)
+        return 0;
+
+    FILE *symf = fopen(filename, "w");
+    if (symf == NULL)
+        return -1;
+
+    std::vector<std::pair<std::string, unsigned long long>> entries;
+    entries.reserve(global_label_set.size());
+    for (auto it = global_label_set.begin(); it != global_label_set.end(); ++it)
+    {
+        auto map_it = tag_vma_map.find(*it);
+        if (map_it != tag_vma_map.end())
+            entries.push_back(std::make_pair(map_it->first, map_it->second));
+    }
+
+    std::sort(entries.begin(), entries.end(),
+              [](const std::pair<std::string, unsigned long long> &a,
+                 const std::pair<std::string, unsigned long long> &b)
+              {
+                  if (a.second != b.second)
+                      return a.second < b.second;
+                  return a.first < b.first;
+              });
+
+    for (size_t i = 0; i < entries.size(); ++i)
+    {
+        unsigned int addr = (unsigned int)(entries[i].second & 0xFFFFFFFFULL);
+        fprintf(symf, "%08X %s\n", addr, entries[i].first.c_str());
+    }
+
+    fclose(symf);
+    return 0;
+}
 
 static void set_eval_context(unsigned long long loc, unsigned long long vma)
 {
@@ -1268,6 +1324,10 @@ int process_escape_char(const char *src, unsigned char *dst, bool check_only)
     if (*++src == 'x')
     {
         char a = *++src, b = *++src;
+        if (!((a >= '0' && a <= '9') || (a >= 'a' && a <= 'f') || (a >= 'A' && a <= 'F')))
+            return -1;
+        if (!((b >= '0' && b <= '9') || (b >= 'a' && b <= 'f') || (b >= 'A' && b <= 'F')))
+            return -1;
         if (a >= 'a' && a <= 'f')
             a = a - 'a' + 'A';
         if (b >= 'a' && b <= 'f')
@@ -1285,7 +1345,7 @@ int process_escape_char(const char *src, unsigned char *dst, bool check_only)
         {
             *dst = (a << 4) | b;
         }
-        return 3; // 返回 \xHH 的长度
+        return 4; // 返回 \xHH 的长度
     }
     else if (*src == 'n')
     {
@@ -1486,7 +1546,10 @@ int genasm(long long buffer_size, bool check_only, int *line_idx)
     int fsret = 0;
     std::stack<unsigned long long> loc_stack;
     if (check_only)
+    {
         tag_vma_map.clear();
+        global_label_set.clear();
+    }
     current_global_label[0] = '\0';
 
     // 从script_lines中读取行
@@ -1580,6 +1643,8 @@ int genasm(long long buffer_size, bool check_only, int *line_idx)
             {
                 if (tag_vma_map.find(normalized_label) == tag_vma_map.end())
                     tag_vma_map[normalized_label] = now_loc + offset;
+                if (raw_label[0] != '.')
+                    global_label_set.insert(normalized_label);
                 debug("%16s: %llX\n", normalized_label, tag_vma_map[normalized_label]);
             }
         }
@@ -2162,10 +2227,34 @@ int handle_s(const char *filename)
     {
         int err = errno;
         error(1902);
-        error(1110);
+        error(1130);
         puts(strerror(err));
         return 2;
     }
+    return 0;
+}
+
+int handle_sym(const char *filename)
+{
+    if (filename == NULL)
+        fatal(1901);
+
+    if (symnm != NULL)
+    {
+        warn(1020);
+        info(1500);
+        return 1020;
+    }
+
+    symnm = strdup(filename);
+    if (symnm == NULL)
+    {
+        int err = errno;
+        error(1902);
+        puts(strerror(err));
+        return 2;
+    }
+
     return 0;
 }
 
@@ -2264,9 +2353,12 @@ static struct err_t
     {{0, "操作正常结束。"},
     {1000, "早已打开输入文件。"},
     {1010, "早已打开输出文件。"},
+    {1020, "早已指定符号导出文件。"},
     {1100, "无法打开输入文件。"},
     {1101, "需要输入文件，但未能打开。"},
     {1110, "无法打开输出文件。"},
+    {1120, "无法导出符号文件。"},
+    {1130, "无法打开脚本文件。"},
     {1111, "需要输出文件，但未能打开。"},
     {1200, "未知的输出偏好选项。输出未定义数时所选方案未知。检查 -d 选项值。"},
     {1500, "将忽略新指定的文件。"},
@@ -2348,9 +2440,12 @@ static struct err_t
     {0, "Operation completed successfully."},
     {1000, "Input file is already open."},
     {1010, "Output file is already open."},
+    {1020, "Symbol export file is already specified."},
     {1100, "Failed to open input file."},
     {1101, "Input file is required but was not opened."},
     {1110, "Failed to open output file."},
+    {1120, "Failed to export symbol file."},
+    {1130, "Failed to open script file."},
     {1111, "Output file is required but was not opened."},
     {1200, "Unknown output fallback mode. Check -d option value."},
     {1500, "The newly specified file will be ignored."},
@@ -2493,7 +2588,7 @@ int show_help(const char *stub)
 #ifndef DESC_LANG_EN
     puts("Partially assembler for MIPS R5900.\n    Coded by Xiyan_shan");
     puts("部分汇编补丁应用器，RX79专版。\n    编写者：单希研");
-    puts("Version 1.4.0");
+    puts("Version 1.4.1");
     puts("用法 Usage: prtasm (-m [a/d]) -i [input.bin] -o [output.bin] (-s [script.txt] (Options))");
     puts("选项 Options: ");
     puts("-A [asm code]    [测试]立即转换汇编代码到十六进制数据。");
@@ -2501,6 +2596,7 @@ int show_help(const char *stub)
     puts("-i [input.bin]   指定输入文件。");
     puts("-o [output.bin]  指定输出文件。");
     puts("-s [script.txt]  指定脚本文件。");
+    puts("--sym [sym.txt]  导出全局标签符号表（每行：8位大写16进制地址 + 空格 + 标签名）。");
     puts("-S               从标准输入读取脚本（仅当模式为汇编时可用）。");
     puts("-l [range]       指定反汇编限定地址(格式：xxx:xxx，16 进制)。（仅当模式为反汇编时可用）");
     puts("-m [a/d]         指定为汇编或反汇编模式。（反汇编时，选项 -s 被忽略。）");
@@ -2520,7 +2616,7 @@ int show_help(const char *stub)
     prtasm -m a -i test.elf -o mod.elf -s mod.mips --move-only-word");
 #else
     puts("Partially assembler for MIPS R5900.\n    Coded by Xiyan_shan");
-    puts("Version 1.4.0");
+    puts("Version 1.4.1");
     puts("Usage: prtasm (-m [a/d]) -i [input.bin] -o [output.bin] (-s [script.txt] (Options))");
     puts("Options:");
     puts("-A [asm code]    [Test] Convert assembly code to hexadecimal machine code immediately.");
@@ -2528,6 +2624,7 @@ int show_help(const char *stub)
     puts("-i [input.bin]   Specify input file.");
     puts("-o [output.bin]  Specify output file.");
     puts("-s [script.txt]  Specify script file.");
+    puts("--sym [sym.txt]  Export global labels (one per line: 8-digit uppercase hex address + label).");
     puts("-S               Read script from standard input (assembler mode only).");
     puts("-l [range]       Set disassembly address range (format: xxx:xxx, hexadecimal; disassembler mode only).");
     puts("-m [a/d]         Select assembler or disassembler mode. (In disassembler mode, -s is ignored.)");
